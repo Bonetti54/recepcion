@@ -1575,27 +1575,42 @@ $('btn-search').onclick = function () { openSearch(''); };
 // =====================================================================
 S.camOn = false;       // la cámara está leyendo
 S.camMode = false;     // el empleado está trabajando con la cámara (reabrir tras cada producto)
-var cam = null, camLast = { code: '', t: 0 };
+var cam = null, camLast = { code: '', t: 0 }, camStopping = Promise.resolve();
 function camFormats() {
   var F = window.Html5QrcodeSupportedFormats;
   return F ? [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.CODABAR] : undefined;
+}
+/** Detiene una instancia de cámara sin importar en qué estado esté. */
+function stopCam(inst) {
+  if (!inst) return Promise.resolve();
+  var p;
+  try { p = inst.stop(); } catch (e) { p = Promise.resolve(); }
+  return Promise.resolve(p).catch(function () {}).then(function () { try { inst.clear(); } catch (e) {} });
 }
 function openCamera() {
   S.camMode = true;
   openSheet('sh-cam');
   $('cam-msg').textContent = 'Iniciando cámara…';
   $('cam-photo').classList.add('hidden');
-  if (!window.Html5Qrcode) return camFallback('No se pudo cargar el lector de la cámara.');
-  try {
-    cam = new Html5Qrcode('cam-reader', {
-      formatsToSupport: camFormats(), verbose: false,
-      experimentalFeatures: { useBarCodeDetectorIfSupported: true }   // detector nativo de Android: más rápido
-    });
-    cam.start({ facingMode: 'environment' }, {
+  if (!window.Html5Qrcode) return camFallback('No se pudo cargar el lector de la cámara. Revisá la conexión.');
+  if (cam) return;   // ya está abierta o abriéndose
+  // Espera a que termine de apagarse la cámara anterior (evita "la cámara está en uso").
+  camStopping.then(function () {
+    if (!S.camMode || $('sh-cam').classList.contains('hidden') || cam) return;
+    var inst;
+    try {
+      inst = new Html5Qrcode('cam-reader', {
+        formatsToSupport: camFormats(), verbose: false,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }   // detector nativo de Android: más rápido
+      });
+    } catch (e) { return camFallback('No se pudo iniciar la cámara.'); }
+    cam = inst;
+    inst.start({ facingMode: 'environment' }, {
       fps: 15, disableFlip: true,
-      qrbox: function (w, h) { return { width: Math.floor(w * 0.88), height: Math.floor(Math.min(h * 0.55, w * 0.45)) }; }
+      videoConstraints: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      qrbox: function (w, h) { return { width: Math.max(60, Math.floor(w * 0.88)), height: Math.max(60, Math.floor(Math.min(h * 0.55, w * 0.45))) }; }
     }, function (text) {
-      if (!S.camOn) return;
+      if (!S.camOn || cam !== inst) return;
       var c = cleanCode(text), now = Date.now();
       if (c === camLast.code && now - camLast.t < 1500) return;   // misma lectura repetida
       camLast = { code: c, t: now };
@@ -1603,12 +1618,18 @@ function openCamera() {
       onScan(text, 'camara');
     }, function () {}
     ).then(function () {
+      if (cam !== inst) { camStopping = stopCam(inst); return; }   // se cerró mientras arrancaba
       S.camOn = true;
       $('cam-msg').textContent = 'Apuntá al código: se lee solo.';
-    }).catch(function () {
-      camFallback('La cámara en vivo no está disponible en esta versión (Google la bloquea). Usá "Tomar foto del código" o la app vinculada de GitHub.');
+    }).catch(function (err) {
+      if (cam === inst) cam = null;
+      try { inst.clear(); } catch (e) {}
+      var denied = err && /NotAllowed|Permission/i.test(String(err.name || err));
+      camFallback(denied
+        ? 'Chrome no tiene permiso para usar la cámara: tocá el candado 🔒 junto a la dirección → Permisos → Cámara → Permitir.'
+        : 'La cámara en vivo no está disponible en esta versión (Google la bloquea). Usá "Tomar foto del código" o la app vinculada de GitHub.');
     });
-  } catch (e) { camFallback('No se pudo iniciar la cámara.'); }
+  });
 }
 function camFallback(msg) {
   $('cam-msg').textContent = msg;
@@ -1618,7 +1639,7 @@ $('btn-cam').onclick = openCamera;
 function closeCamera() {
   S.camOn = false;
   var c = cam; cam = null;
-  if (c) { try { c.stop().then(function () { try { c.clear(); } catch (e) {} }).catch(function () {}); } catch (e) {} }
+  if (c) camStopping = stopCam(c);
   $('sh-cam').classList.add('hidden');
 }
 /** Tras terminar con un producto, si se venía usando la cámara, se reabre sola. */
