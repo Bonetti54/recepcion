@@ -216,6 +216,20 @@ textarea.input{resize:vertical;font-size:16px}
 .toast.err{background:var(--red)}
 .toast.ok{background:var(--green)}
 
+.op-row{display:flex;gap:8px}
+.op-row .btn{flex:1;margin:0 0 8px;font-size:16px}
+.btn-dev{background:#5b21b6;color:#fff}
+.btn-aju{background:#b45309;color:#fff}
+.badge-dev{background:#ede9fe;color:#5b21b6}
+.badge-aju{background:#ffedd5;color:#9a3412}
+.badge-rect{background:#ffedd5;color:#9a3412}
+#scr-recep[data-op="DEVOLUCION"] .topbar.dark{background:#4c1d95}
+#scr-recep[data-op^="AJUSTE"] .topbar.dark{background:#7c2d12}
+.chips.wrap{flex-wrap:wrap;padding:0;overflow:visible}
+.line.changed{border-left-color:#d97706;background:#fff7ed}
+.line .q s,.tbl s{color:#9aa3ad;font-size:15px;margin-right:4px}
+.rect-bar{background:#7c2d12!important}
+.rect-group{margin:10px 0 4px;font-size:14px;color:#9a3412;font-weight:700}
 @media (min-width:700px){
   .user-grid{grid-template-columns:repeat(3,1fr)}
   .keypad button{min-height:66px}
@@ -250,9 +264,13 @@ textarea.input{resize:vertical;font-size:16px}
     </header>
     <main class="pad">
       <button class="btn btn-primary btn-xl" id="btn-new">＋ NUEVA RECEPCIÓN</button>
+      <div class="op-row">
+        <button class="btn btn-dev btn-lg" id="btn-new-dev">↩ DEVOLUCIÓN</button>
+        <button class="btn btn-aju btn-lg" id="btn-new-aju">± AJUSTE DE STOCK</button>
+      </div>
       <h3 class="section-title">En proceso</h3>
       <div id="home-open" class="list"></div>
-      <button class="btn btn-ghost btn-lg" id="btn-history">Historial de recepciones</button>
+      <button class="btn btn-ghost btn-lg" id="btn-history">Historial</button>
       <div class="cat-status" id="cat-status"></div>
     </main>
   </section>
@@ -261,23 +279,44 @@ textarea.input{resize:vertical;font-size:16px}
   <section class="screen" id="scr-new">
     <header class="topbar">
       <button class="tb-back" data-go="home">‹</button>
-      <div class="tb-title">Nueva recepción</div><span></span>
+      <div class="tb-title" id="new-title">Nueva recepción</div><span></span>
     </header>
     <main class="pad">
-      <label class="field-label">Proveedor</label>
-      <div id="prov-selected" class="prov-selected hidden"></div>
-      <div id="prov-picker">
-        <input id="prov-search" class="input" type="search" placeholder="Buscar proveedor…" autocomplete="off">
-        <div id="prov-list" class="list compact"></div>
-        <button class="btn btn-ghost" id="btn-prov-new">＋ Agregar proveedor nuevo</button>
+      <div id="prov-box">
+        <label class="field-label">Proveedor</label>
+        <div id="prov-selected" class="prov-selected hidden"></div>
+        <div id="prov-picker">
+          <input id="prov-search" class="input" type="search" placeholder="Buscar por nombre, fantasía o CUIT…" autocomplete="off">
+          <div class="hint" id="prov-count"></div>
+          <div id="prov-list" class="list compact"></div>
+          <button class="btn btn-ghost" id="btn-prov-new">＋ Agregar proveedor nuevo</button>
+        </div>
       </div>
 
-      <label class="field-label">Comprobante</label>
-      <div class="seg" id="tipo-seg">
-        <button data-v="REMITO" class="on">REMITO</button>
-        <button data-v="FACTURA">FACTURA</button>
+      <div id="comp-box">
+        <label class="field-label">Comprobante</label>
+        <div class="seg" id="tipo-seg">
+          <button data-v="REMITO" class="on">REMITO</button>
+          <button data-v="FACTURA">FACTURA</button>
+          <button data-v="NOTA DE CREDITO">NOTA DE CRÉDITO</button>
+        </div>
+        <input id="nro" class="input input-big" type="text" placeholder="Nº de remito / factura" autocomplete="off" maxlength="40">
       </div>
-      <input id="nro" class="input input-big" type="text" placeholder="Nº de remito / factura" autocomplete="off" maxlength="40">
+
+      <div id="aj-box" class="hidden">
+        <label class="field-label">Tipo de ajuste</label>
+        <div class="seg" id="signo-seg">
+          <button data-v="BAJA" class="on">BAJA (resta stock)</button>
+          <button data-v="ALTA">ALTA (suma stock)</button>
+        </div>
+        <label class="field-label">Motivo</label>
+        <div class="chips wrap" id="motivo-chips"></div>
+      </div>
+
+      <div id="motivo-box" class="hidden">
+        <label class="field-label" id="motivo-label">Detalle (opcional)</label>
+        <input id="motivo-det" class="input" maxlength="100" autocomplete="off">
+      </div>
       <p class="hint">Fecha, hora y usuario se registran solos.</p>
       <button class="btn btn-primary btn-xl" id="btn-start">COMENZAR A ESCANEAR</button>
     </main>
@@ -288,7 +327,7 @@ textarea.input{resize:vertical;font-size:16px}
     <header class="topbar dark">
       <button class="tb-back" id="btn-recep-back">‹</button>
       <div class="tb-mid">
-        <div class="tb-sub"><span id="r-id"></span> · <span class="badge badge-proc" id="r-estado">EN PROCESO</span></div>
+        <div class="tb-sub"><span class="badge hidden" id="r-op"></span> <span id="r-id"></span> · <span class="badge badge-proc" id="r-estado">EN PROCESO</span></div>
         <div class="tb-title ellipsis" id="r-prov"></div>
       </div>
       <button class="tb-btn" id="btn-recep-menu">⋯</button>
@@ -323,7 +362,7 @@ textarea.input{resize:vertical;font-size:16px}
   <section class="screen" id="scr-confirm">
     <header class="topbar">
       <button class="tb-back" data-go="recep">‹</button>
-      <div class="tb-title">Confirmar recepción</div><span></span>
+      <div class="tb-title" id="cf-title">Confirmar recepción</div><span></span>
     </header>
     <main class="pad">
       <div class="summary-card" id="cf-head"></div>
@@ -343,7 +382,7 @@ textarea.input{resize:vertical;font-size:16px}
   <section class="screen" id="scr-done">
     <main class="pad center">
       <div class="done-check">✔</div>
-      <h2>Recepción confirmada</h2>
+      <h2 id="done-title">Recepción confirmada</h2>
       <div class="done-id" id="done-id"></div>
       <p id="done-info" class="muted"></p>
       <button class="btn btn-primary btn-xl" id="btn-done-new">＋ NUEVA RECEPCIÓN</button>
@@ -362,6 +401,9 @@ textarea.input{resize:vertical;font-size:16px}
       <button data-f="" class="on">Todas</button>
       <button data-f="SIGA">Pendientes SIGA</button>
       <button data-f="EN PROCESO">En proceso</button>
+      <button data-op="RECEPCION">Recepciones</button>
+      <button data-op="DEVOLUCION">Devoluciones</button>
+      <button data-op="AJUSTE">Ajustes</button>
     </div>
     <main class="pad"><div id="hist-list" class="list"></div></main>
   </section>
@@ -377,7 +419,28 @@ textarea.input{resize:vertical;font-size:16px}
       <div class="actions" id="dt-actions"></div>
       <div id="dt-lines"></div>
       <div id="dt-incs"></div>
+      <div id="dt-rect"></div>
     </main>
+  </section>
+
+  <!-- ============ RECTIFICAR (ADMIN) ============ -->
+  <section class="screen" id="scr-rect">
+    <header class="topbar dark rect-bar">
+      <button class="tb-back" id="btn-rect-back">‹</button>
+      <div class="tb-mid"><div class="tb-sub" id="rect-sub"></div><div class="tb-title">Rectificar</div></div>
+      <span></span>
+    </header>
+    <main class="pad list-wrap">
+      <p class="hint">Tocá un artículo y escribí la cantidad <b>CORRECTA</b> (0 = quitarlo). También podés escanear un código para buscarlo. El registro original no se borra: la corrección queda en el historial.</p>
+      <div id="rect-lines" class="lines"></div>
+      <button class="btn btn-ghost" id="btn-rect-add">＋ Agregar artículo que faltó</button>
+      <label class="field-label">Motivo de la rectificación (obligatorio)</label>
+      <input id="rect-motivo" class="input" maxlength="200" autocomplete="off" placeholder="Ej.: error de conteo, llegó otra caja…">
+      <div style="height:96px"></div>
+    </main>
+    <footer class="bottombar">
+      <button class="btn btn-warn btn-xl" id="btn-rect-save">GUARDAR RECTIFICACIÓN</button>
+    </footer>
   </section>
 
 </div>
@@ -494,6 +557,25 @@ function norm(s) {
   return String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 }
 function cleanCode(s) { return String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
+
+// ---------- Tipos de operación
+var OPS = {
+  RECEPCION:   { palabra: 'recepción',  titulo: 'Nueva recepción',              badge: '',            cls: '' },
+  DEVOLUCION:  { palabra: 'devolución', titulo: 'Nueva devolución a proveedor', badge: 'DEVOLUCIÓN',  cls: 'badge-dev' },
+  AJUSTE_BAJA: { palabra: 'ajuste',     titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE BAJA', cls: 'badge-aju' },
+  AJUSTE_ALTA: { palabra: 'ajuste',     titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE ALTA', cls: 'badge-aju' }
+};
+function opOf(r) { var o = r && (r.operacion || r.op); return OPS[o] ? o : 'RECEPCION'; }
+function esAjuste(op) { return op === 'AJUSTE_BAJA' || op === 'AJUSTE_ALTA'; }
+function opBadge(op) { var o = OPS[op] || OPS.RECEPCION; return o.badge ? '<span class="badge ' + o.cls + '">' + o.badge + '</span> ' : ''; }
+/** Texto principal de una operación: proveedor o, en ajustes, el motivo. */
+function opTitulo(r) {
+  var op = opOf(r);
+  if (esAjuste(op)) return 'Ajuste · ' + (r.motivo || '');
+  return r.proveedor || r.prov || '';
+}
+function opComprobante(r) { return (r.tipo || r.nro) ? ((r.tipo || '') + ' ' + (r.nro || '')).trim() : ''; }
+function palabra(op, mayus) { var w = (OPS[op] || OPS.RECEPCION).palabra; return mayus ? w.toUpperCase() : w; }
 function uid() {
   if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
   return 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
@@ -650,6 +732,7 @@ function go(name) {
   if (name === 'recep') { renderRecep(); refocusScan(); }
   if (name === 'confirm') renderConfirm();
   if (name === 'history') loadHistory();
+  if (name === 'rect') renderRect();
 }
 document.addEventListener('click', function (e) {
   var g = e.target.closest('[data-go]');
@@ -858,14 +941,15 @@ function renderHome() {
   $('home-empresa').textContent = (S.cfg.empresa || '') + (S.user && S.user.rol === 'ADMIN' ? ' · ADMIN' : '');
   var box = $('home-open');
   box.innerHTML = '';
-  if (!S.enProceso.length) box.innerHTML = '<div class="empty-small">No hay recepciones abiertas.</div>';
+  if (!S.enProceso.length) box.innerHTML = '<div class="empty-small">No hay operaciones abiertas.</div>';
   S.enProceso.forEach(function (r) {
     var local = store.get('rm_draft_' + r.id);
     var items = local ? countItems(local.lines) : r.items;
     var b = document.createElement('button');
     b.className = 'item';
-    b.innerHTML = '<div class="grow"><div class="t">' + esc(r.proveedor) + '</div><div class="s">' + esc(r.id) + ' · ' +
-      esc(r.tipo) + ' ' + esc(r.nro) + ' · ' + esc(r.usuario) + ' · ' + esc(r.inicio) + '</div></div><div class="r">' + items + '<div class="s">prod.</div></div>';
+    var comp = opComprobante(r);
+    b.innerHTML = '<div class="grow"><div class="t">' + opBadge(opOf(r)) + esc(opTitulo(r)) + '</div><div class="s">' + esc(r.id) +
+      (comp ? ' · ' + esc(comp) : '') + ' · ' + esc(r.usuario) + ' · ' + esc(r.inicio) + '</div></div><div class="r">' + items + '<div class="s">prod.</div></div>';
     b.onclick = function () { openRecep(r.id); };
     box.appendChild(b);
   });
@@ -885,44 +969,123 @@ function countItems(lines) {
   return Object.keys(s).length;
 }
 $('btn-history').onclick = function () { go('history'); };
-$('btn-new').onclick = startNew;
-$('btn-done-new').onclick = startNew;
+$('btn-new').onclick = function () { startNew('RECEPCION'); };
+$('btn-new-dev').onclick = function () { startNew('DEVOLUCION'); };
+$('btn-new-aju').onclick = function () { startNew('AJUSTE'); };
+$('btn-done-new').onclick = function () { startNew(S.lastOp || 'RECEPCION'); };
 
 // =====================================================================
 //  NUEVA RECEPCIÓN
 // =====================================================================
-function startNew() {
-  S.newRecep = { prov: null, tipo: 'REMITO', clientId: uid() };
+function startNew(op) {
+  op = (op === 'DEVOLUCION' || op === 'AJUSTE') ? op : 'RECEPCION';
+  S.lastOp = op;
+  S.newRecep = { op: op, prov: null, tipo: 'REMITO', clientId: uid(), signo: 'BAJA', motivo: '' };
+  var aj = op === 'AJUSTE';
+  $('new-title').textContent = aj ? 'Nuevo ajuste de stock' : op === 'DEVOLUCION' ? 'Nueva devolución a proveedor' : 'Nueva recepción';
+  $('prov-box').classList.toggle('hidden', aj);
+  $('comp-box').classList.toggle('hidden', aj);
+  $('aj-box').classList.toggle('hidden', !aj);
+  $('motivo-box').classList.toggle('hidden', op === 'RECEPCION');
+  $('motivo-label').textContent = aj ? 'Detalle (opcional)' : 'Motivo de la devolución (opcional)';
+  $('motivo-det').placeholder = aj ? 'Ej.: góndola 4, caja aplastada' : 'Ej.: vencidos, mal estado, error de pedido';
+  $('motivo-det').value = '';
+  document.querySelector('#tipo-seg [data-v="FACTURA"]').classList.toggle('hidden', op !== 'RECEPCION');
+  document.querySelector('#tipo-seg [data-v="NOTA DE CREDITO"]').classList.toggle('hidden', op !== 'DEVOLUCION');
+  $('nro').placeholder = op === 'DEVOLUCION' ? 'Nº de remito o nota de crédito (opcional)' : 'Nº de remito / factura';
   $('nro').value = '';
   $('prov-search').value = '';
   setTipo('REMITO');
+  setSigno('BAJA');
+  renderMotivos();
   renderProvPicker();
   $('btn-prov-new').classList.toggle('hidden', !S.cfg.permitirAltaProveedor);
   go('new');
   // refrescar proveedores en segundo plano
-  call('apiInicio', S.token).then(function (d) { S.provs = d.proveedores; S.enProceso = d.enProceso; renderProvPicker(); }).catch(function () {});
+  call('apiInicio', S.token).then(function (d) { S.provs = d.proveedores; S.enProceso = d.enProceso; S.cfg = d.config; renderProvPicker(); renderMotivos(); }).catch(function () {});
+}
+function setSigno(v) {
+  S.newRecep.signo = v;
+  document.querySelectorAll('#signo-seg button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-v') === v); });
+}
+document.querySelectorAll('#signo-seg button').forEach(function (b) { b.onclick = function () { setSigno(b.getAttribute('data-v')); }; });
+function renderMotivos() {
+  var box = $('motivo-chips');
+  box.innerHTML = '';
+  var lista = (S.cfg.motivosAjuste && S.cfg.motivosAjuste.length) ? S.cfg.motivosAjuste : ['ROTURA', 'VENCIDO', 'ROBO / FALTANTE', 'CONSUMO INTERNO', 'DIFERENCIA DE INVENTARIO', 'OTRO'];
+  lista.forEach(function (m) {
+    var b = document.createElement('button');
+    b.textContent = m;
+    b.className = S.newRecep.motivo === m ? 'on' : '';
+    b.onclick = function () { S.newRecep.motivo = m; renderMotivos(); };
+    box.appendChild(b);
+  });
+}
+
+// ---------- Proveedores: búsqueda fácil por nombre, fantasía, CUIT o código
+function provNorm(s) { return norm(s).replace(/[.,]/g, '').replace(/\s+/g, ' ').trim(); }
+function provRecientes() { return store.get('rm_prov_recent') || []; }
+function guardarProvReciente(id) {
+  var l = provRecientes().filter(function (x) { return x !== id; });
+  l.unshift(id);
+  store.set('rm_prov_recent', l.slice(0, 6));
+}
+function provItem(p, box) {
+  var b = document.createElement('button');
+  b.className = 'item';
+  var sub = [];
+  if (p.fantasia) sub.push(p.fantasia);
+  if (p.cuit) sub.push('CUIT ' + p.cuit);
+  if (p.codigo) sub.push('Cód. ' + p.codigo);
+  b.innerHTML = '<div class="grow"><div class="t">' + esc(p.nombre) + '</div>' + (sub.length ? '<div class="s">' + esc(sub.join(' · ')) + '</div>' : '') + '</div>';
+  b.onclick = function () {
+    S.newRecep.prov = p; renderProvPicker();
+    if (!$('comp-box').classList.contains('hidden')) $('nro').focus();
+  };
+  box.appendChild(b);
 }
 function renderProvPicker() {
   var sel = S.newRecep.prov;
   $('prov-selected').classList.toggle('hidden', !sel);
   $('prov-picker').classList.toggle('hidden', !!sel);
   if (sel) {
-    $('prov-selected').innerHTML = '<span class="grow">' + esc(sel.nombre) + '</span><button class="link" id="btn-prov-change">Cambiar</button>';
+    $('prov-selected').innerHTML = '<span class="grow">' + esc(sel.nombre) + (sel.fantasia ? '<div class="s" style="font-weight:500;font-size:14px">' + esc(sel.fantasia) + '</div>' : '') +
+      '</span><button class="link" id="btn-prov-change">Cambiar</button>';
     $('btn-prov-change').onclick = function () { S.newRecep.prov = null; renderProvPicker(); $('prov-search').focus(); };
     return;
   }
-  var q = norm($('prov-search').value);
-  var list = S.provs.filter(function (p) { return !q || norm(p.nombre).indexOf(q) >= 0 || (p.cuit && p.cuit.indexOf(q) >= 0) || (p.codigo && p.codigo === q); });
+  var q = provNorm($('prov-search').value);
+  var toks = q ? q.split(' ') : [];
   var box = $('prov-list');
   box.innerHTML = '';
-  if (!S.provs.length) box.innerHTML = '<div class="empty-small">No hay proveedores cargados. Agregá uno.</div>';
-  list.slice(0, 30).forEach(function (p) {
-    var b = document.createElement('button');
-    b.className = 'item';
-    b.innerHTML = '<div class="grow"><div class="t">' + esc(p.nombre) + '</div>' + (p.cuit ? '<div class="s">CUIT ' + esc(p.cuit) + '</div>' : '') + '</div>';
-    b.onclick = function () { S.newRecep.prov = p; renderProvPicker(); $('nro').focus(); };
-    box.appendChild(b);
+  $('prov-count').textContent = '';
+  if (!S.provs.length) { box.innerHTML = '<div class="empty-small">No hay proveedores cargados. Agregá uno.</div>'; return; }
+  if (!toks.length) {
+    var byId = {};
+    S.provs.forEach(function (p) { byId[p.id] = p; });
+    var rec = provRecientes().map(function (id) { return byId[id]; }).filter(Boolean);
+    if (rec.length) {
+      box.insertAdjacentHTML('beforeend', '<div class="hint" style="margin:2px">Usados recientemente</div>');
+      rec.forEach(function (p) { provItem(p, box); });
+      box.insertAdjacentHTML('beforeend', '<div class="hint" style="margin:6px 2px 2px">Todos</div>');
+    }
+    S.provs.slice(0, 30).forEach(function (p) { provItem(p, box); });
+    if (S.provs.length > 30) $('prov-count').textContent = S.provs.length + ' proveedores: escribí parte del nombre para encontrarlo.';
+    return;
+  }
+  var list = S.provs.filter(function (p) {
+    var hay = provNorm([p.nombre, p.fantasia, p.cuit, p.codigo].join(' '));
+    return toks.every(function (t) { return hay.indexOf(t) >= 0; });
   });
+  // Primero los que EMPIEZAN con lo escrito
+  list.sort(function (a, b) {
+    var sa = (provNorm(a.nombre).indexOf(q) === 0 || provNorm(a.fantasia).indexOf(q) === 0) ? 0 : 1;
+    var sb = (provNorm(b.nombre).indexOf(q) === 0 || provNorm(b.fantasia).indexOf(q) === 0) ? 0 : 1;
+    return (sa - sb) || a.nombre.localeCompare(b.nombre);
+  });
+  $('prov-count').textContent = list.length ? (list.length === 1 ? '1 proveedor' : list.length + ' proveedores') : '';
+  if (!list.length) box.innerHTML = '<div class="empty-small">Ningún proveedor coincide. Probá con otra palabra o agregalo.</div>';
+  list.slice(0, 40).forEach(function (p) { provItem(p, box); });
 }
 $('prov-search').addEventListener('input', renderProvPicker);
 function setTipo(v) {
@@ -952,15 +1115,21 @@ $('btn-prov-new').onclick = function () {
 };
 
 $('btn-start').onclick = function () {
+  var n = S.newRecep, op = n.op, aj = op === 'AJUSTE';
   var nro = $('nro').value.trim();
-  if (!S.newRecep.prov) return toast('Elegí un proveedor', 'err');
-  if (!nro && S.cfg.exigirNro) { $('nro').focus(); return toast('Ingresá el Nº de remito o factura', 'err'); }
-  busy(true, 'Creando recepción…');
+  var det = $('motivo-det').value.trim();
+  if (!aj && !n.prov) return toast('Elegí un proveedor', 'err');
+  if (op === 'RECEPCION' && !nro && S.cfg.exigirNro) { $('nro').focus(); return toast('Ingresá el Nº de remito o factura', 'err'); }
+  if (aj && !n.motivo) return toast('Elegí el motivo del ajuste', 'err');
+  var motivo = aj ? (n.motivo + (det ? ' - ' + det : '')) : det;
+  busy(true, 'Creando ' + palabra(aj ? 'AJUSTE_BAJA' : op) + '…');
   call('apiCrearRecepcion', S.token, {
-    clientId: S.newRecep.clientId, proveedorId: S.newRecep.prov.id, tipo: S.newRecep.tipo, nro: nro
+    clientId: n.clientId, operacion: aj ? 'AJUSTE_' + n.signo : op,
+    proveedorId: n.prov ? n.prov.id : '', tipo: aj ? '' : n.tipo, nro: aj ? '' : nro, motivo: motivo
   }).then(function (d) {
     busy(false);
     var r = d.recepcion;
+    if (n.prov) guardarProvReciente(n.prov.id);
     S.recep = newRecepObj(r);
     saveLocal();
     store.set('rm_cur', r.id);
@@ -969,7 +1138,7 @@ $('btn-start').onclick = function () {
   }).catch(function (e) {
     busy(false);
     if (e.code === 'DUPLICADA' && e.extra && e.extra.estado === 'EN PROCESO') {
-      modal('Comprobante ya registrado', '<p>' + esc(e.msg) + '</p><p>¿Querés continuar esa recepción?</p>',
+      modal('Comprobante ya registrado', '<p>' + esc(e.msg) + '</p><p>¿Querés continuar esa operación?</p>',
         [{ label: 'No', value: false }, { label: 'Continuar', value: true, cls: 'btn-primary' }])
         .then(function (ok) { if (ok) openRecep(e.extra.id); });
     } else alertMsg('No se pudo crear', e.msg);
@@ -978,7 +1147,7 @@ $('btn-start').onclick = function () {
 
 function newRecepObj(r) {
   return { id: r.id, prov: r.proveedor, tipo: r.tipo, nro: r.nro, usuario: r.usuario, inicio: r.inicio,
-           estado: r.estado, lines: [], inc: [], obs: '', rev: 0, srvRev: r.rev || 0 };
+           estado: r.estado, op: opOf(r), motivo: r.motivo || '', lines: [], inc: [], obs: '', rev: 0, srvRev: r.rev || 0 };
 }
 
 // =====================================================================
@@ -1003,6 +1172,7 @@ function openRecep(id) {
       fromPayload(rec, srv.data);
       rec.rev = srv.rev; rec.srvRev = srv.rev;
     }
+    rec.op = opOf(r); rec.motivo = r.motivo || ''; rec.prov = r.proveedor; rec.tipo = r.tipo; rec.nro = r.nro;
     S.recep = rec;
     saveLocal();
     store.set('rm_cur', id);
@@ -1095,8 +1265,13 @@ function totals(r) {
 function renderRecep() {
   var r = S.recep;
   if (!r) return go('home');
+  var op = opOf(r);
+  $('scr-recep').setAttribute('data-op', op);
   $('r-id').textContent = r.id;
-  $('r-prov').textContent = r.prov + ' · ' + r.tipo + ' ' + r.nro;
+  var ob = OPS[op];
+  $('r-op').textContent = ob.badge; $('r-op').className = 'badge ' + ob.cls + (ob.badge ? '' : ' hidden');
+  var comp = opComprobante(r);
+  $('r-prov').textContent = esAjuste(op) ? (op === 'AJUSTE_BAJA' ? 'Baja · ' : 'Alta · ') + r.motivo : (r.prov + (comp ? ' · ' + comp : ''));
   var t = totals(r);
   $('st-items').textContent = fmtN(t.items);
   $('st-units').textContent = fmtN(t.units);
@@ -1251,7 +1426,7 @@ document.addEventListener('keydown', function (e) {
   var t = e.target;
   if (t && t.id === 'scan') return;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-  if (S.screen !== 'recep') return;
+  if (S.screen !== 'recep' && S.screen !== 'rect') return;
   var now = Date.now();
   if (e.key === 'Enter' || e.key === 'Tab') {
     if (KB.buf.length >= 3) {
@@ -1276,6 +1451,17 @@ document.addEventListener('keydown', function (e) {
 
 /** Punto central: llega un código (lector, cámara, campo o búsqueda). */
 function onScan(raw, source) {
+  if (S.screen === 'rect' && S.rect) {          // en Rectificar: el código solo busca el artículo
+    if (!$('modal').classList.contains('hidden')) return;
+    var rc = cleanCode(raw);
+    if (rc.length < 2) return;
+    closeSheets(true);
+    var rr = lookup(rc, false);
+    if (rr.matches.length === 1) { beep(true); rectPick(rr.matches[0]); }
+    else if (rr.matches.length > 1) { beep(true); openChooser(rc, rr.matches); }
+    else { beep(false); toast('El código ' + rc + ' no está en el maestro', 'err'); }
+    return;
+  }
   if (S.screen !== 'recep' || !S.recep) return;
   if (!$('modal').classList.contains('hidden')) return;
   var code = cleanCode(raw);
@@ -1361,8 +1547,8 @@ function qtySet(v, fresh) {
     $('q-conv').classList.remove('hidden');
   } else $('q-conv').classList.add('hidden');
   $('q-unit').textContent = q.unit === 'B' ? 'bultos' : 'u';
-  var lbl = { add: 'AGREGAR', edit: 'GUARDAR', inc: 'REGISTRAR' }[q.mode];
-  $('q-ok').textContent = lbl + (n ? ' ' + fmtN(n) + (q.unit === 'B' ? ' b' : ' u') : '');
+  var lbl = { add: 'AGREGAR', edit: 'GUARDAR', inc: 'REGISTRAR', rect: 'CAMBIAR A' }[q.mode];
+  $('q-ok').textContent = lbl + ((n || q.mode === 'rect') ? ' ' + fmtN(n) + (q.unit === 'B' ? ' b' : ' u') : '');
 }
 
 function setupQtySheet(q) {
@@ -1400,7 +1586,7 @@ function setupQtySheet(q) {
   var quick = $('q-quick');
   quick.innerHTML = '';
   var qs = [];
-  if (q.mode !== 'edit') qs.push(['+1', 1]);
+  if (q.mode !== 'edit' && q.mode !== 'rect') qs.push(['+1', 1]);
   if (p && p.x > 1 && q.mode === 'add') qs.push(['+' + p.x + ' (caja)', p.x]);
   qs.forEach(function (x) {
     var b = document.createElement('button');
@@ -1460,6 +1646,12 @@ function qtyOk(silent) {
   var q = S.qty;
   if (!q) return true;
   var n = parseInt(q.val, 10) || 0;
+  if (q.mode === 'rect') {
+    var rl = S.rect && S.rect.map[q.cod];
+    if (rl) rl.nuevo = (n === rl.actual) ? null : n;
+    closeSheets(true); renderRect();
+    return true;
+  }
   if (q.mode === 'edit') {
     if (n <= 0) { toast('Para quitarlo usá ELIMINAR', 'err'); return false; }
     S.recep.lines.forEach(function (l) { if (l.k === q.key) { l.b = 0; l.u = n; l.t2 = Date.now(); } });
@@ -1545,6 +1737,7 @@ function renderResults(list, code) {
     b.onclick = function () {
       var fu = S.searchFromUnknown;
       closeSheets(true);
+      if (S.screen === 'rect') { rectPick(p); return; }
       if (fu) {
         setupQtySheet({ mode: 'add', p: p, bc: '', val: '1', fromUnknown: fu });
       } else openQtyAdd(p, code || '');
@@ -1559,6 +1752,11 @@ $('s-input').addEventListener('keydown', function (e) {
   var v = this.value.trim();
   if (/^\d{3,}$/.test(v)) {
     var res = lookup(v, true);
+    if (S.screen === 'rect') {
+      if (res.matches.length === 1) { closeSheets(true); beep(true); rectPick(res.matches[0]); }
+      else if (!res.matches.length) { beep(false); toast('El código no está en el maestro', 'err'); }
+      return;
+    }
     if (res.matches.length === 1) { closeSheets(true); beep(true); openQtyAdd(res.matches[0], v); }
     else if (!res.matches.length) { closeSheets(true); beep(false); openUnknown(cleanCode(v)); }
   }
@@ -1687,8 +1885,14 @@ function decodeImage(file) {
 function renderConfirm() {
   var r = S.recep;
   var t = totals(r);
-  $('cf-head').innerHTML = '<div class="big">' + esc(r.prov) + '</div>' + esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' +
-    'Recepción ' + esc(r.id) + ' · iniciada ' + esc(r.inicio) + '<br>Responsable: <b>' + esc(S.user.nombre) + '</b>';
+  var op = opOf(r);
+  $('cf-title').textContent = 'Confirmar ' + palabra(op);
+  $('btn-confirm').textContent = '✔ CONFIRMAR ' + palabra(op, true);
+  var cab;
+  if (esAjuste(op)) cab = '<div class="big">' + (op === 'AJUSTE_BAJA' ? 'AJUSTE · BAJA DE STOCK' : 'AJUSTE · ALTA DE STOCK') + '</div>Motivo: <b>' + esc(r.motivo) + '</b><br>';
+  else cab = '<div class="big">' + opBadge(op) + esc(r.prov) + '</div>' + (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
+             (r.motivo ? 'Motivo: ' + esc(r.motivo) + '<br>' : '');
+  $('cf-head').innerHTML = cab + 'Operación ' + esc(r.id) + ' · iniciada ' + esc(r.inicio) + '<br>Responsable: <b>' + esc(S.user.nombre) + '</b>';
   $('cf-totals').innerHTML = '<div><b>' + fmtN(t.items) + '</b><span>productos</span></div><div><b>' + fmtN(t.units) +
     '</b><span>unidades</span></div><div><b>' + t.inc + '</b><span>sin identificar</span></div>';
   var rows = r.lines.slice().sort(function (a, b) {
@@ -1715,7 +1919,7 @@ $('btn-confirm').onclick = function () {
   r.obs = $('cf-obs').value;
   saveLocal();
   var t = totals(r);
-  modal('¿Confirmar recepción?', '<p><b>' + fmtN(t.items) + '</b> productos · <b>' + fmtN(t.units) + '</b> unidades' +
+  modal('¿Confirmar ' + palabra(opOf(r)) + '?', '<p><b>' + fmtN(t.items) + '</b> productos · <b>' + fmtN(t.units) + '</b> unidades' +
     (t.inc ? ' · <b>' + t.inc + '</b> incidencias' : '') + '</p><p>Después de confirmar <b>no se puede modificar</b>. Las correcciones las hace un administrador.</p>',
     [{ label: 'Revisar', value: false }, { label: 'CONFIRMAR', value: true, cls: 'btn-confirm' }]
   ).then(function (ok) { if (ok) sendConfirm(); });
@@ -1725,7 +1929,8 @@ function sendConfirm() {
   var r = S.recep;
   $('btn-confirm').disabled = true;
   clearTimeout(S.syncTimer);
-  busy(true, 'Confirmando recepción…');
+  busy(true, 'Confirmando ' + palabra(opOf(r)) + '…');
+  var opConf = opOf(r);
   call('apiConfirmarRecepcion', S.token, r.id, toPayload(r)).then(function (d) {
     busy(false);
     var h = d.recepcion;
@@ -1733,7 +1938,9 @@ function sendConfirm() {
     S.enProceso = S.enProceso.filter(function (x) { return x.id !== r.id; });
     S.recep = null;
     $('done-id').textContent = h.id;
-    $('done-info').innerHTML = esc(h.proveedor) + '<br>' + esc(h.tipo + ' ' + h.nro) + '<br>' + fmtN(h.items) + ' productos · ' +
+    $('done-title').textContent = esAjuste(opConf) ? 'Ajuste confirmado' : opConf === 'DEVOLUCION' ? 'Devolución confirmada' : 'Recepción confirmada';
+    $('btn-done-new').textContent = '＋ NUEVA ' + (S.lastOp === 'AJUSTE' ? 'AJUSTE' : S.lastOp === 'DEVOLUCION' ? 'DEVOLUCIÓN' : 'RECEPCIÓN');
+    $('done-info').innerHTML = esc(opTitulo(h)) + (opComprobante(h) ? '<br>' + esc(opComprobante(h)) : '') + '<br>' + fmtN(h.items) + ' productos · ' +
       fmtN(h.unidades) + ' unidades' + (h.incidencias ? ' · ' + h.incidencias + ' incidencias' : '') +
       '<br>Confirmada por ' + esc(h.confirmadaPor) + ' · ' + esc(h.confirmadaEn) + (d.yaConfirmada ? '<br><i>(ya estaba confirmada)</i>' : '');
     beep(true);
@@ -1755,7 +1962,8 @@ function sendConfirm() {
 // =====================================================================
 document.querySelectorAll('#hist-filter button').forEach(function (b) {
   b.onclick = function () {
-    S.histFilter = b.getAttribute('data-f');
+    S.histFilter = b.getAttribute('data-f') || '';
+    S.histOp = b.getAttribute('data-op') || '';
     document.querySelectorAll('#hist-filter button').forEach(function (x) { x.classList.toggle('on', x === b); });
     loadHistory();
   };
@@ -1765,22 +1973,29 @@ $('btn-hist-refresh').onclick = function () { loadHistory(); };
 function estadoBadge(r) {
   var cls = r.estado === 'CONFIRMADA' ? 'badge-ok' : r.estado === 'ANULADA' ? 'badge-anul' : 'badge-proc';
   var s = '<span class="badge ' + cls + '">' + esc(r.estado) + '</span>';
-  if (r.estado === 'CONFIRMADA') s += ' <span class="badge ' + (r.estadoSiga === 'CONCILIADA' ? 'badge-conc">SIGA OK' : 'badge-pend">SIGA PEND.') + '</span>';
+  if (r.estado === 'CONFIRMADA') {
+    if (r.estadoSiga === 'CONCILIADA') s += ' <span class="badge badge-conc">SIGA OK</span>';
+    else if (r.estadoSiga === 'RECTIFICADA') s += ' <span class="badge badge-rect">SIGA: CORRECCIÓN PEND.</span>';
+    else s += ' <span class="badge badge-pend">SIGA PEND.</span>';
+  }
+  if (r.rectificaciones) s += ' <span class="badge badge-rect">✎ RECTIFICADA</span>';
   return s;
 }
 function loadHistory() {
   var f = S.histFilter;
   var filtro = f === 'SIGA' ? { estado: 'CONFIRMADA', estadoSiga: 'PENDIENTE' } : f ? { estado: f } : {};
+  if (S.histOp) filtro.operacion = S.histOp;
   $('hist-list').innerHTML = '<div class="empty-small">Cargando…</div>';
   call('apiHistorial', S.token, filtro).then(function (d) {
     var box = $('hist-list');
     box.innerHTML = '';
-    if (!d.recepciones.length) box.innerHTML = '<div class="empty-small">No hay recepciones.</div>';
+    if (!d.recepciones.length) box.innerHTML = '<div class="empty-small">No hay operaciones.</div>';
     d.recepciones.forEach(function (r) {
       var b = document.createElement('button');
       b.className = 'item';
-      b.innerHTML = '<div class="grow"><div class="t">' + esc(r.proveedor) + '</div><div class="s">' + esc(r.id) + ' · ' + esc(r.tipo) + ' ' +
-        esc(r.nro) + '<br>' + esc(r.confirmadaEn || r.inicio) + ' · ' + esc(r.confirmadaPor || r.usuario) + '</div><div style="margin-top:4px">' +
+      var comp = opComprobante(r);
+      b.innerHTML = '<div class="grow"><div class="t">' + opBadge(opOf(r)) + esc(opTitulo(r)) + '</div><div class="s">' + esc(r.id) + (comp ? ' · ' + esc(comp) : '') +
+        '<br>' + esc(r.confirmadaEn || r.inicio) + ' · ' + esc(r.confirmadaPor || r.usuario) + '</div><div style="margin-top:4px">' +
         estadoBadge(r) + '</div></div><div class="r">' + fmtN(r.unidades) + '<div class="s">u</div></div>';
       b.onclick = function () { r.estado === 'EN PROCESO' ? openRecep(r.id) : openDetail(r.id); };
       box.appendChild(b);
@@ -1795,7 +2010,10 @@ function openDetail(id) {
     S.detail = d;
     var r = d.recepcion;
     $('dt-title').textContent = r.id;
-    $('dt-head').innerHTML = '<div class="big">' + esc(r.proveedor) + '</div>' + esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' +
+    var op = opOf(r);
+    $('dt-head').innerHTML = '<div class="big">' + opBadge(op) + esc(opTitulo(r)) + '</div>' +
+      (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
+      (r.motivo && !esAjuste(op) ? 'Motivo: ' + esc(r.motivo) + '<br>' : '') +
       'Inicio: ' + esc(r.inicio) + ' (' + esc(r.usuario) + ')<br>' +
       (r.confirmadaEn ? 'Confirmada: ' + esc(r.confirmadaEn) + ' (' + esc(r.confirmadaPor) + ')<br>' : '') +
       (r.conciliadaEn ? 'Conciliada SIGA: ' + esc(r.conciliadaEn) + ' (' + esc(r.conciliadaPor) + ')<br>' : '') +
@@ -1805,12 +2023,34 @@ function openDetail(id) {
     act.innerHTML = '';
     if (r.estado === 'CONFIRMADA') {
       addAction(act, 'Exportar CSV', 'btn-ghost', function () { exportRecep(r.id); });
-      if (S.user.rol === 'ADMIN' && r.estadoSiga !== 'CONCILIADA') addAction(act, 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id); });
+      if (S.user.rol === 'ADMIN' && r.estadoSiga !== 'CONCILIADA') {
+        addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id); });
+      }
+      if (S.user.rol === 'ADMIN') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
     }
     $('dt-lines').innerHTML = d.lineas.length ? '<table class="tbl">' + d.lineas.map(function (l) {
-      return '<tr><td>' + esc(l.desc) + '<div class="m">' + esc(l.pres) + ' · Cód. ' + esc(l.codigo) + (l.lote ? ' · Lote ' + esc(l.lote) : '') +
-        (l.venc ? ' · Vto ' + esc(l.venc) : '') + '</div></td><td class="n">' + fmtN(l.unidades) + '</td></tr>';
+      var neto = l.unidadesNeto === undefined ? l.unidades : l.unidadesNeto;
+      var cant = neto !== l.unidades ? '<s>' + fmtN(l.unidades) + '</s>' + fmtN(neto) : fmtN(neto);
+      return '<tr><td>' + esc(l.desc) + (l.agregado ? ' <span class="badge badge-rect">AGREGADO</span>' : '') +
+        '<div class="m">' + esc(l.pres) + ' · Cód. ' + esc(l.codigo) + (l.lote ? ' · Lote ' + esc(l.lote) : '') +
+        (l.venc ? ' · Vto ' + esc(l.venc) : '') + '</div></td><td class="n">' + cant + '</td></tr>';
     }).join('') + '</table>' : '';
+    // Historial de rectificaciones
+    var rect = d.rectificaciones || [];
+    var grupos = {}, orden = [];
+    rect.forEach(function (x) {
+      var m = String(x.id).match(/-R(\d+)-/); var k = m ? m[1] : '?';
+      if (!grupos[k]) { grupos[k] = { nro: k, fecha: x.fecha, usuario: x.usuario, motivo: x.motivo, estadoSiga: x.estadoSiga, items: [] }; orden.push(k); }
+      grupos[k].items.push(x);
+    });
+    $('dt-rect').innerHTML = orden.length ? '<h3 class="section-title">Rectificaciones</h3>' + orden.map(function (k) {
+      var g = grupos[k];
+      return '<div class="rect-group">Rectificación ' + esc(g.nro) + ' · ' + esc(g.fecha) + ' · ' + esc(g.usuario) +
+        (g.estadoSiga === 'CONCILIADA' ? ' · SIGA OK' : ' · SIGA pendiente') + '<br><span style="font-weight:500">Motivo: ' + esc(g.motivo) + '</span></div>' +
+        '<table class="tbl">' + g.items.map(function (x) {
+          return '<tr><td>' + esc(x.desc) + '<div class="m">Cód. ' + esc(x.codigo) + '</div></td><td class="n">' + (x.delta > 0 ? '+' : '−') + fmtN(Math.abs(x.delta)) + '</td></tr>';
+        }).join('') + '</table>';
+    }).join('') : '';
     $('dt-incs').innerHTML = d.incidencias.length ? '<h3 class="section-title">Incidencias</h3><table class="tbl">' + d.incidencias.map(function (x) {
       return '<tr><td>' + esc(x.barras) + '<div class="m">' + esc(x.tipo) + (x.detalle ? ' · ' + esc(x.detalle) : '') + ' · ' + esc(x.estado) +
         '</div></td><td class="n">' + (x.cantidad ? fmtN(x.cantidad) : '') + '</td></tr>';
@@ -1839,7 +2079,7 @@ function exportRecep(id) {
   }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
 }
 function conciliar(id) {
-  modal('Conciliar con SIGA', '<p>Confirmá que esta recepción ya fue <b>cargada y verificada en SIGA</b>.</p>' +
+  modal('Conciliar con SIGA', '<p>Confirmá que esta operación (y sus correcciones, si las tiene) ya fue <b>cargada y verificada en SIGA</b>.</p>' +
     '<label class="field-label">Nota (opcional, ej. Nº de comprobante en SIGA)</label><input id="cc-nota" class="input" maxlength="200">',
     [{ label: 'Cancelar', value: false }, { label: 'Conciliar', value: true, cls: 'btn-primary' }]
   ).then(function (ok) {
@@ -1850,6 +2090,90 @@ function conciliar(id) {
       busy(false); toast('Marcada como conciliada', 'ok'); openDetail(id);
     }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
   });
+}
+
+// =====================================================================
+//  RECTIFICAR (solo ADMIN): corrige cantidades de una operación confirmada
+// =====================================================================
+function openRect() {
+  var d = S.detail;
+  if (!d) return;
+  var r = d.recepcion;
+  var map = {}, lines = [];
+  d.lineas.forEach(function (l) {
+    var q = l.unidadesNeto === undefined ? l.unidades : l.unidadesNeto;
+    if (map[l.codigo]) map[l.codigo].actual += q;
+    else { map[l.codigo] = { codigo: l.codigo, desc: l.desc, pres: l.pres, actual: q, nuevo: null }; lines.push(map[l.codigo]); }
+  });
+  S.rect = { id: r.id, op: opOf(r), hdr: r, lines: lines, map: map, clientId: uid() };
+  $('rect-motivo').value = '';
+  go('rect');
+}
+function renderRect() {
+  var R = S.rect;
+  if (!R) return go('home');
+  $('rect-sub').textContent = (OPS[R.op].badge ? OPS[R.op].badge + ' · ' : '') + R.id + ' · ' + opTitulo(R.hdr);
+  var box = $('rect-lines');
+  box.innerHTML = '';
+  R.lines.forEach(function (l) {
+    var cambia = l.nuevo !== null && l.nuevo !== l.actual;
+    var b = document.createElement('button');
+    b.className = 'line' + (cambia ? ' changed' : '');
+    b.innerHTML = '<div class="grow"><div class="d">' + esc(l.desc) + (l.actual === 0 && cambia ? ' <span class="badge badge-rect">NUEVO</span>' : '') +
+      '</div><div class="m">' + esc(l.pres || '') + ' · Cód. ' + esc(l.codigo) + '</div></div><div class="q">' +
+      (cambia ? '<s>' + fmtN(l.actual) + '</s>' + fmtN(l.nuevo) : fmtN(l.actual)) + '<small>u</small></div>';
+    b.onclick = function () { rectEdit(l.codigo); };
+    box.appendChild(b);
+  });
+}
+function rectEdit(cod) {
+  var l = S.rect.map[cod];
+  if (!l) return;
+  var p = (S.cat && S.cat.prods.get(cod)) || { c: cod, d: l.desc, p: l.pres || '', x: 1, a: true };
+  setupQtySheet({ mode: 'rect', p: p, bc: '', cod: cod, val: String(l.nuevo !== null ? l.nuevo : l.actual) });
+  $('q-prev').textContent = 'Actual: ' + fmtN(l.actual) + ' u — escribí la cantidad CORRECTA (0 = quitar)';
+  $('q-prev').classList.remove('hidden');
+}
+function rectPick(p) {
+  var l = S.rect.map[p.c];
+  if (!l) {
+    l = { codigo: p.c, desc: p.d, pres: p.p, actual: 0, nuevo: null };
+    S.rect.map[p.c] = l; S.rect.lines.push(l);
+    renderRect();
+  }
+  rectEdit(p.c);
+}
+$('btn-rect-back').onclick = function () { S.rect = null; go('detail'); };
+$('btn-rect-add').onclick = function () { openSearch(''); };
+$('btn-rect-save').onclick = function () {
+  var R = S.rect;
+  var cambios = R.lines.filter(function (l) { return l.nuevo !== null && l.nuevo !== l.actual; });
+  var motivo = $('rect-motivo').value.trim();
+  if (!cambios.length) return toast('No cambiaste ninguna cantidad', 'err');
+  if (motivo.length < 3) { $('rect-motivo').focus(); return toast('Escribí el motivo de la rectificación', 'err'); }
+  modal('¿Guardar rectificación?', '<table class="tbl">' + cambios.map(function (l) {
+    return '<tr><td>' + esc(l.desc) + '</td><td class="n"><s>' + fmtN(l.actual) + '</s>' + fmtN(l.nuevo) + '</td></tr>';
+  }).join('') + '</table><p>Motivo: <b>' + esc(motivo) + '</b></p><p class="muted">El registro original se conserva; la corrección queda en el historial y pendiente de cargar en SIGA.</p>',
+    [{ label: 'Revisar', value: false }, { label: 'GUARDAR', value: true, cls: 'btn-warn' }]
+  ).then(function (ok) { if (ok) sendRect(cambios, motivo); });
+};
+function sendRect(cambios, motivo) {
+  var R = S.rect;
+  busy(true, 'Guardando rectificación…');
+  call('apiRectificarRecepcion', S.token, R.id, cambios.map(function (l) { return { codigo: l.codigo, cantidad: l.nuevo }; }), motivo, R.clientId)
+    .then(function (d) {
+      busy(false);
+      toast('Rectificación ' + d.nro + ' guardada', 'ok');
+      var id = R.id; S.rect = null;
+      openDetail(id);
+    }).catch(function (e) {
+      busy(false);
+      if (e.code === 'SESION') return;
+      var retry = e.code === 'RED' || e.code === 'OCUPADO';
+      modal('No se pudo guardar', '<p>' + esc(e.msg).replace(/\n/g, '<br>') + '</p>' + (retry ? '<p>Podés reintentar sin riesgo de duplicar.</p>' : ''),
+        retry ? [{ label: 'Cerrar', value: false }, { label: 'Reintentar', value: true, cls: 'btn-primary' }] : undefined
+      ).then(function (again) { if (again === true && retry) sendRect(cambios, motivo); });
+    });
 }
 
 // =====================================================================
