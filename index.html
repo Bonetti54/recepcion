@@ -4,6 +4,9 @@
   <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#17202B">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -230,6 +233,8 @@ textarea.input{resize:vertical;font-size:16px}
 .line .q s,.tbl s{color:#9aa3ad;font-size:15px;margin-right:4px}
 .rect-bar{background:#7c2d12!important}
 .rect-group{margin:10px 0 4px;font-size:14px;color:#9a3412;font-weight:700}
+.ver-banner{position:sticky;top:0;z-index:30;background:#fff3cd;color:#664d03;border-bottom:1px solid #f1d27a;padding:10px 14px;font-weight:600;font-size:15px}
+.ver-banner button{margin-left:8px;border:1px solid #c9a227;background:#fff;border-radius:8px;padding:4px 10px;font-weight:700}
 @media (min-width:700px){
   .user-grid{grid-template-columns:repeat(3,1fr)}
   .keypad button{min-height:66px}
@@ -239,6 +244,7 @@ textarea.input{resize:vertical;font-size:16px}
 </head>
 <body>
 <div id="app">
+  <div class="ver-banner hidden" id="ver-banner"></div>
 
   <!-- ============ INGRESO (usuario + PIN) ============ -->
   <section class="screen" id="scr-login">
@@ -610,7 +616,7 @@ var API = null;
   if (!API) { try { API = JSON.parse(localStorage.getItem('rm_api') || 'null'); } catch (e) { API = null; } }
 })();
 
-function callApi(fn, args, timeoutMs) {
+function callApi(fn, args, timeoutMs, meta) {
   if (!API || !API.u || !API.k) {
     return Promise.reject({ code: 'LLAVE', msg: 'Este celular no está vinculado. Abrí el enlace de vinculación que generaste desde la planilla (menú 📦 Recepción).' });
   }
@@ -628,6 +634,7 @@ function callApi(fn, args, timeoutMs) {
     clearTimeout(timer);
     throw { code: 'RED', msg: e && e.name === 'AbortError' ? 'Sin respuesta del servidor. Revisá la conexión.' : 'Error de conexión. Revisá el Wi-Fi.' };
   }).then(function (res) {
+    if (meta && res && res.srvMs !== undefined) meta.srv = res.srvMs;
     if (res && res.ok) return res.data;
     var err = res || { code: 'ERROR', msg: 'Respuesta inválida' };
     if (err.code === 'SESION') onSessionExpired(err.msg);
@@ -638,11 +645,26 @@ function callApi(fn, args, timeoutMs) {
   });
 }
 
-/** Llama a una función del servidor. Devuelve una promesa con data o rechaza {code,msg}. */
+/**
+ * Llama a una función del servidor. Devuelve una promesa con data o rechaza {code,msg}.
+ * Además mide cuánto tardó (total visto desde el celular y tiempo del servidor).
+ */
 function call(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
   var timeoutMs = fn === 'apiCatalogo' ? 120000 : 40000;
-  if (MODO === 'api') return callApi(fn, args, timeoutMs);
+  var meta = { srv: '' };
+  var t0 = Date.now();
+  var p = MODO === 'api' ? callApi(fn, args, timeoutMs, meta) : callGas(fn, args, timeoutMs, meta);
+  if (fn === 'apiRegistrarMetricas' || fn === 'apiLogout') return p;
+  return p.then(function (d) {
+    metric(fn, Date.now() - t0, meta.srv, true, '', fn === 'apiCatalogo' && d && d.p ? d.p.length + ' art.' : '');
+    return d;
+  }, function (e) {
+    metric(fn, Date.now() - t0, meta.srv, false, e && e.code, '');
+    throw e;
+  });
+}
+function callGas(fn, args, timeoutMs, meta) {
   return new Promise(function (resolve, reject) {
     var done = false;
     var timer = setTimeout(function () {
@@ -652,6 +674,7 @@ function call(fn) {
     var runner = google.script.run
       .withSuccessHandler(function (res) {
         if (done) return; done = true; clearTimeout(timer);
+        if (meta && res && res.srvMs !== undefined) meta.srv = res.srvMs;
         if (res && res.ok) resolve(res.data);
         else {
           var err = res || { code: 'ERROR', msg: 'Respuesta inválida' };
@@ -666,6 +689,68 @@ function call(fn) {
     runner[fn].apply(runner, args);
   });
 }
+
+// =====================================================================
+//  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
+// =====================================================================
+var FRONT_VERSION = '2.1.0';
+var API_REQUERIDA = 3;          // versión del servidor que necesita esta pantalla
+
+/** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
+function checkVersion(apiVersion) {
+  var b = $('ver-banner');
+  var v = Number(apiVersion) || 0;
+  if (v === API_REQUERIDA) { b.classList.add('hidden'); return; }
+  if (v < API_REQUERIDA) {
+    b.innerHTML = '⚠ Falta actualizar el <b>Codigo.gs</b> en Apps Script (servidor más viejo que la app). Avisale al administrador.';
+  } else {
+    b.innerHTML = '⚠ Hay una versión nueva de la app. <button id="ver-reload">Actualizar</button>';
+  }
+  b.classList.remove('hidden');
+  var rb = $('ver-reload');
+  if (rb) rb.onclick = function () { location.reload(); };
+}
+
+var DEV_ID = (function () {
+  var d = null;
+  try { d = localStorage.getItem('rm_dev'); } catch (e) {}
+  if (!d) { d = Math.random().toString(36).slice(2, 8).toUpperCase(); try { localStorage.setItem('rm_dev', d); } catch (e) {} }
+  return d;
+})();
+var MET = { q: store.get('rm_met') || [], off: false, sending: false, inicio: Date.now() };
+/** Agrega una medición a la cola del teléfono (se envía en lotes cuando la app está tranquila). */
+function metric(op, ms, srv, ok, code, det) {
+  if (MET.off) return;
+  if (S.cfg && S.cfg.medirTiempos === false) return;
+  if (op === 'apiGuardarBorrador' && Math.random() > 0.25) return;   // autoguardado: se mide 1 de cada 4
+  MET.q.push([Date.now(), op, Math.round(ms), srv === undefined ? '' : srv, ok ? 1 : 0, code || '', det || '']);
+  if (MET.q.length > 400) MET.q = MET.q.slice(-400);
+  store.set('rm_met', MET.q);
+}
+function flushMetrics(force) {
+  if (MET.off || MET.sending || !S.token || !MET.q.length) return;
+  if (!force && (S.syncing || (navigator.onLine === false) || document.visibilityState === 'hidden')) return;
+  var lote = MET.q.slice(0, 200);
+  MET.sending = true;
+  call('apiRegistrarMetricas', S.token, DEV_ID, lote, FRONT_VERSION).then(function (d) {
+    MET.sending = false;
+    MET.q = MET.q.slice(lote.length);
+    if (d && d.activa === false) { MET.off = true; MET.q = []; }
+    store.set('rm_met', MET.q);
+  }).catch(function () { MET.sending = false; });
+}
+setInterval(function () { flushMetrics(false); }, 90000);
+
+/** PWA: registra el service worker (solo en la versión publicada en GitHub). */
+(function registrarSW() {
+  if (MODO !== 'api' || !('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      try { reg.update(); } catch (e) {}
+    }).catch(function (e) { console.warn('Service worker no registrado:', e); });
+  });
+})();
 
 function busy(on, msg) {
   $('busy').classList.toggle('hidden', !on);
@@ -728,7 +813,7 @@ function go(name) {
   $('scr-' + name).classList.add('active');
   S.screen = name;
   window.scrollTo(0, 0);
-  if (name === 'home') renderHome();
+  if (name === 'home') { renderHome(); setTimeout(function () { flushMetrics(false); }, 1500); }
   if (name === 'recep') { renderRecep(); refocusScan(); }
   if (name === 'confirm') renderConfirm();
   if (name === 'history') loadHistory();
@@ -748,6 +833,8 @@ function loadUsers() {
   busy(true, 'Conectando…');
   call('apiListarUsuarios').then(function (d) {
     busy(false);
+    checkVersion(d.apiVersion);
+    if (!MET.inicioMedido) { MET.inicioMedido = true; metric('app_abrir_hasta_ingreso', Date.now() - MET.inicio, '', true, '', MODO); }
     if (d.empresa) $('login-empresa').textContent = d.empresa;
     var box = $('login-users');
     box.innerHTML = '';
@@ -760,7 +847,9 @@ function loadUsers() {
     });
   }).catch(function (e) {
     busy(false);
-    $('login-msg').textContent = e.msg;
+    $('login-msg').textContent = (e.code === 'RED' && navigator.onLine === false)
+      ? 'Sin conexión a internet. Se conecta solo cuando vuelva la señal. Si tenías una operación a medias, está guardada en este teléfono.'
+      : e.msg;
     if (e.code !== 'LLAVE') setTimeout(loadUsers, 5000);
   });
 }
@@ -810,6 +899,8 @@ function afterLogin() {
   busy(true, 'Cargando datos…');
   return call('apiInicio', S.token).then(function (d) {
     S.cfg = d.config; S.provs = d.proveedores; S.enProceso = d.enProceso;
+    checkVersion(d.config.apiVersion);
+    if (d.config.medirTiempos === false) { MET.off = true; MET.q = []; store.set('rm_met', []); }
     return ensureCatalog();
   }).then(function () {
     busy(false);
@@ -872,6 +963,8 @@ function ensureCatalog(force) {
 }
 
 function buildCatalog(d) {
+  var tb0 = Date.now();
+  setTimeout(function () { metric('catalogo_armar', Date.now() - tb0, '', true, '', d.p.length + ' art.'); }, 0);
   var prods = new Map(), bc = new Map(), nz = new Map(), list = [];
   d.p.forEach(function (r) {
     var o = { c: r[0], d: r[1], p: r[2], x: r[3] || 1, a: r[4] !== 0 };
@@ -1247,7 +1340,10 @@ function setSync(st) {
   el.className = 'sync ' + (st === 'ok' ? '' : st);
   el.title = st === 'ok' ? 'Guardado en la planilla' : st === 'pending' ? 'Guardado en el teléfono, sincronizando…' : 'Sin conexión: guardado solo en el teléfono';
 }
-window.addEventListener('online', function () { if (S.recep) scheduleSync(500); });
+window.addEventListener('online', function () {
+  if (S.recep) scheduleSync(500);
+  if (S.screen === 'login' && !$('login-users').children.length) loadUsers();
+});
 
 // =====================================================================
 //  PANTALLA DE RECEPCIÓN
@@ -1481,10 +1577,12 @@ function onScan(raw, source) {
   if (source === 'camara') closeCamera();
   else if (source === 'lector' || source === 'campo') { S.camMode = false; if (cam) closeCamera(); }
 
+  var tl0 = Date.now();
   var res = lookup(code, source === 'manual');
   if (res.matches.length === 1) {
     beep(true);
     openQtyAdd(res.matches[0], code);
+    if (Math.random() < 0.1) metric('escaneo_buscar_y_mostrar', Date.now() - tl0, '', true, '', source);
   } else if (res.matches.length > 1) {
     beep(true);
     openChooser(code, res.matches);
