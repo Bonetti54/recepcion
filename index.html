@@ -654,15 +654,32 @@ function callApi(fn, args, timeoutMs, meta) {
 }
 
 /**
+ * v2.3: consultas que solo LEEN datos. Si Google no contesta en 20 s, se
+ * reintentan una vez solas (antes se esperaba 40 s y había que volver a tocar).
+ * Las que escriben (crear, confirmar, guardar…) siguen igual: 40 s y sin reintento
+ * automático, porque ya tienen su botón "Reintentar" seguro.
+ */
+var LECTURAS = { apiListarUsuarios: 1, apiInicio: 1, apiHistorial: 1, apiVerRecepcion: 1, apiAbrirRecepcion: 1 };
+
+/**
  * Llama a una función del servidor. Devuelve una promesa con data o rechaza {code,msg}.
  * Además mide cuánto tardó (total visto desde el celular y tiempo del servidor).
  */
 function call(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
-  var timeoutMs = fn === 'apiCatalogo' ? 120000 : 40000;
+  var timeoutMs = fn === 'apiCatalogo' ? 120000 : (LECTURAS[fn] ? 20000 : 40000);
   var meta = { srv: '' };
   var t0 = Date.now();
-  var p = MODO === 'api' ? callApi(fn, args, timeoutMs, meta) : callGas(fn, args, timeoutMs, meta);
+  var enviar = function () { return MODO === 'api' ? callApi(fn, args, timeoutMs, meta) : callGas(fn, args, timeoutMs, meta); };
+  var p = enviar();
+  if (LECTURAS[fn]) {
+    p = p.catch(function (e) {
+      if (!e || e.code !== 'RED' || navigator.onLine === false) throw e;
+      metric(fn, Date.now() - t0, '', false, 'RED', 'reintento');
+      t0 = Date.now(); meta.srv = '';
+      return enviar();
+    });
+  }
   if (fn === 'apiRegistrarMetricas' || fn === 'apiLogout') return p;
   return p.then(function (d) {
     metric(fn, Date.now() - t0, meta.srv, true, '', fn === 'apiCatalogo' && d && d.p ? d.p.length + ' art.' : '');
@@ -701,7 +718,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.2.1';
+var FRONT_VERSION = '2.3.0';
 var API_REQUERIDA = 4;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -837,24 +854,45 @@ document.addEventListener('click', function (e) {
 // =====================================================================
 var pinUser = null, pinVal = '';
 
+/** Dibuja los botones de usuarios en la pantalla de ingreso. */
+function renderUsers(usuarios) {
+  var box = $('login-users');
+  box.innerHTML = '';
+  if (!usuarios.length) { box.innerHTML = '<p class="muted center">No hay usuarios activos en la hoja USUARIOS.</p>'; return; }
+  usuarios.forEach(function (u) {
+    var b = document.createElement('button');
+    b.textContent = u.nombre;
+    b.onclick = function () { selectPinUser(u); };
+    box.appendChild(b);
+  });
+}
+
+/**
+ * v2.3: la lista de usuarios queda guardada en el teléfono. Al abrir la app se
+ * muestra al instante y se actualiza con el servidor mientras la persona elige
+ * su nombre. El PIN se sigue validando siempre en el servidor.
+ */
 function loadUsers() {
-  busy(true, 'Conectando…');
+  var guardados = store.get('rm_users');
+  var hayGuardados = !!(guardados && guardados.usuarios && guardados.usuarios.length);
+  if (hayGuardados) {
+    if (guardados.empresa) $('login-empresa').textContent = guardados.empresa;
+    if (!$('login-users').children.length) renderUsers(guardados.usuarios);
+  } else busy(true, 'Conectando…');
   call('apiListarUsuarios').then(function (d) {
     busy(false);
     checkVersion(d.apiVersion);
     if (!MET.inicioMedido) { MET.inicioMedido = true; metric('app_abrir_hasta_ingreso', Date.now() - MET.inicio, '', true, '', MODO); }
     if (d.empresa) $('login-empresa').textContent = d.empresa;
-    var box = $('login-users');
-    box.innerHTML = '';
-    if (!d.usuarios.length) { box.innerHTML = '<p class="muted center">No hay usuarios activos en la hoja USUARIOS.</p>'; return; }
-    d.usuarios.forEach(function (u) {
-      var b = document.createElement('button');
-      b.textContent = u.nombre;
-      b.onclick = function () { selectPinUser(u); };
-      box.appendChild(b);
-    });
+    store.set('rm_users', { usuarios: d.usuarios, empresa: d.empresa || '' });
+    renderUsers(d.usuarios);
   }).catch(function (e) {
     busy(false);
+    if (hayGuardados && e.code === 'RED') {
+      // Con la lista guardada se puede elegir igual; se reintenta en silencio.
+      setTimeout(loadUsers, 5000);
+      return;
+    }
     $('login-msg').textContent = (e.code === 'RED' && navigator.onLine === false)
       ? 'Sin conexión a internet. Se conecta solo cuando vuelva la señal. Si tenías una operación a medias, está guardada en este teléfono.'
       : e.msg;
@@ -890,10 +928,11 @@ buildKeypad($('pin-pad'), ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '
 function doLogin() {
   if (pinVal.length < 4) { $('login-msg').textContent = 'El PIN tiene al menos 4 números.'; return; }
   busy(true, 'Verificando…');
-  call('apiLogin', pinUser.usuario, pinVal).then(function (d) {
+  // v2.3: se pide el ingreso junto con los datos de inicio (un viaje en lugar de dos)
+  call('apiLogin', pinUser.usuario, pinVal, true).then(function (d) {
     S.token = d.token; S.user = d.user; S.lastActivity = Date.now();
     pinVal = '';
-    return afterLogin();
+    return afterLogin(d.inicio);
   }).catch(function (e) {
     busy(false);
     pinVal = ''; renderPin();
@@ -903,9 +942,11 @@ function doLogin() {
   });
 }
 
-function afterLogin() {
+/** inicio: datos que ya vinieron con el ingreso (v2.3). Si no vinieron (servidor viejo), se piden. */
+function afterLogin(inicio) {
   busy(true, 'Cargando datos…');
-  return call('apiInicio', S.token).then(function (d) {
+  var pedido = (inicio && inicio.config) ? Promise.resolve(inicio) : call('apiInicio', S.token);
+  return pedido.then(function (d) {
     S.cfg = d.config; S.provs = d.proveedores; S.enProceso = d.enProceso;
     checkVersion(d.config.apiVersion);
     if (d.config.medirTiempos === false) { MET.off = true; MET.q = []; store.set('rm_met', []); }
@@ -957,16 +998,18 @@ setInterval(function () {
 // =====================================================================
 //  CATÁLOGO LOCAL
 // =====================================================================
+/** Resuelve true si descargó el catálogo y false si usó la copia del teléfono (v2.3). */
 function ensureCatalog(force) {
   var cached = force ? null : store.get('rm_cat');
   if (cached && cached.version === S.cfg.catalogoVersion && cached.p) {
     buildCatalog(cached);
-    return Promise.resolve();
+    return Promise.resolve(false);
   }
   busy(true, 'Descargando catálogo de artículos…');
   return call('apiCatalogo', S.token).then(function (d) {
     buildCatalog(d);
     if (!store.set('rm_cat', d)) console.warn('No se pudo guardar el catálogo en el teléfono');
+    return true;
   });
 }
 
@@ -1056,12 +1099,17 @@ function renderHome() {
   });
   var n = S.cat ? S.cat.prods.size : 0;
   $('cat-status').innerHTML = '<span>Catálogo: ' + fmtN(n) + ' artículos</span><button class="link" id="btn-cat-reload">Actualizar catálogo</button>';
+  // v2.3: solo descarga si el maestro cambió (antes bajaba el catálogo completo cada vez).
   $('btn-cat-reload').onclick = function () {
+    busy(true, 'Revisando catálogo…');
     call('apiInicio', S.token).then(function (d) {
       S.cfg = d.config; S.provs = d.proveedores; S.enProceso = d.enProceso;
-      return ensureCatalog(true);
-    }).then(function () { busy(false); toast('Catálogo actualizado', 'ok'); renderHome(); })
-      .catch(function (e) { busy(false); toast(e.msg, 'err'); });
+      return ensureCatalog(false);
+    }).then(function (bajo) {
+      busy(false);
+      toast(bajo ? 'Catálogo actualizado' : 'El catálogo ya estaba al día', 'ok');
+      renderHome();
+    }).catch(function (e) { busy(false); toast(e.msg, 'err'); });
   };
 }
 function countItems(lines) {
@@ -1285,6 +1333,10 @@ function newRecepObj(r) {
 //  ABRIR / GUARDAR RECEPCIÓN
 // =====================================================================
 function openRecep(id) {
+  // v2.3: si la operación está guardada en este teléfono, se abre al instante con esa
+  // copia y se verifica con el servidor sin hacer esperar.
+  var copia = store.get('rm_draft_' + id);
+  if (copia && copia.id === id && copia.lines) return openRecepLocal(id, copia);
   busy(true, 'Abriendo recepción…');
   call('apiAbrirRecepcion', S.token, id).then(function (d) {
     busy(false);
@@ -1318,6 +1370,56 @@ function openRecep(id) {
     } else if (e.code === 'NO_EXISTE') {
       store.del('rm_cur'); alertMsg('No existe', e.msg); go('home');
     } else if (e.code !== 'SESION') { alertMsg('No se pudo abrir', e.msg); go('home'); }
+  });
+}
+
+/**
+ * v2.3: abre con la copia del teléfono y después confirma con el servidor, sin bloquear:
+ *  - si ya no está EN PROCESO (se confirmó o anuló desde otro lado), avisa y vuelve al inicio;
+ *  - si la planilla tiene una versión más nueva (otro celular siguió cargando), la toma,
+ *    con la misma regla que antes (gana la de número de versión mayor);
+ *  - si no, sigue con la del teléfono.
+ */
+function openRecepLocal(id, rec) {
+  rec.estado = 'EN PROCESO';
+  S.recep = rec;
+  store.set('rm_cur', id);
+  go('recep');
+  if (rec.rev > rec.srvRev) scheduleSync(300);
+  call('apiAbrirRecepcion', S.token, id).then(function (d) {
+    var actual = (S.recep && S.recep.id === id) ? S.recep : null;
+    var r = d.recepcion;
+    if (r.estado !== 'EN PROCESO') {
+      store.del('rm_draft_' + id); store.del('rm_cur');
+      if (actual) {
+        clearTimeout(S.syncTimer);
+        S.recep = null; S.camMode = false;
+        closeSheets(true);
+        go('home');
+        alertMsg('Recepción ' + r.estado, 'La recepción ' + id + ' ya está ' + r.estado + '.');
+      }
+      return;
+    }
+    if (!actual) return;   // ya salió de la operación: no hay nada que actualizar
+    actual.op = opOf(r); actual.motivo = r.motivo || ''; actual.prov = r.proveedor; actual.tipo = r.tipo; actual.nro = r.nro;
+    var srv = d.borrador;
+    if (srv && srv.data && srv.rev > actual.rev) {
+      fromPayload(actual, srv.data);
+      actual.rev = srv.rev; actual.srvRev = srv.rev;
+      toast('Se cargó la versión más nueva guardada en la planilla', 'ok');
+    }
+    saveLocal();
+    if (S.screen === 'recep') renderRecep();
+  }).catch(function (e) {
+    var sigue = S.recep && S.recep.id === id;
+    if (e.code === 'NO_EXISTE') {
+      store.del('rm_draft_' + id); store.del('rm_cur');
+      if (sigue) { S.recep = null; S.camMode = false; closeSheets(true); go('home'); alertMsg('No existe', e.msg); }
+    } else if (e.code === 'RED') {
+      if (sigue) toast('Sin conexión: trabajando con la copia del teléfono', 'err');
+    } else if (e.code !== 'SESION' && sigue) {
+      toast(e.msg, 'err');   // se sigue con la copia del teléfono; confirmar vuelve a validar todo
+    }
   });
 }
 
@@ -2150,56 +2252,60 @@ function openDetail(id) {
   busy(true, 'Cargando…');
   call('apiVerRecepcion', S.token, id).then(function (d) {
     busy(false);
-    S.detail = d;
-    var r = d.recepcion;
-    $('dt-title').textContent = r.id;
-    var op = opOf(r);
-    $('dt-head').innerHTML = '<div class="big">' + opBadge(op) + esc(opTitulo(r)) + '</div>' +
-      (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
-      (r.motivo && !esAjuste(op) && op !== 'INVENTARIO' ? 'Motivo: ' + esc(r.motivo) + '<br>' : '') +
-      'Inicio: ' + esc(r.inicio) + ' (' + esc(r.usuario) + ')<br>' +
-      (r.confirmadaEn ? 'Confirmada: ' + esc(r.confirmadaEn) + ' (' + esc(r.confirmadaPor) + ')<br>' : '') +
-      (r.conciliadaEn ? 'Conciliada SIGA: ' + esc(r.conciliadaEn) + ' (' + esc(r.conciliadaPor) + ')<br>' : '') +
-      '<b>' + fmtN(r.items) + '</b> productos · <b>' + fmtN(r.unidades) + '</b> unidades<br>' + estadoBadge(r) +
-      (r.observaciones ? '<p class="muted">' + esc(r.observaciones) + '</p>' : '');
-    var act = $('dt-actions');
-    act.innerHTML = '';
-    if (r.estado === 'CONFIRMADA') {
-      addAction(act, 'Exportar CSV', 'btn-ghost', function () { exportRecep(r.id); });
-      if (S.user.rol === 'ADMIN' && r.estadoSiga !== 'CONCILIADA' && op !== 'INVENTARIO') {
-        addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id); });
-      }
-      if (S.user.rol === 'ADMIN' && op !== 'INVENTARIO') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
-    }
-    $('dt-lines').innerHTML = d.lineas.length ? '<table class="tbl">' + d.lineas.map(function (l) {
-      var neto = l.unidadesNeto === undefined ? l.unidades : l.unidadesNeto;
-      var cant = neto !== l.unidades ? '<s>' + fmtN(l.unidades) + '</s>' + fmtN(neto) : fmtN(neto);
-      return '<tr><td>' + esc(l.desc) + (l.agregado ? ' <span class="badge badge-rect">AGREGADO</span>' : '') +
-        '<div class="m">' + esc(l.pres) + ' · Cód. ' + esc(l.codigo) + (l.lote ? ' · Lote ' + esc(l.lote) : '') +
-        (l.venc ? ' · Vto ' + esc(l.venc) : '') + '</div></td><td class="n">' + cant + '</td></tr>';
-    }).join('') + '</table>' : '';
-    // Historial de rectificaciones
-    var rect = d.rectificaciones || [];
-    var grupos = {}, orden = [];
-    rect.forEach(function (x) {
-      var m = String(x.id).match(/-R(\d+)-/); var k = m ? m[1] : '?';
-      if (!grupos[k]) { grupos[k] = { nro: k, fecha: x.fecha, usuario: x.usuario, motivo: x.motivo, estadoSiga: x.estadoSiga, items: [] }; orden.push(k); }
-      grupos[k].items.push(x);
-    });
-    $('dt-rect').innerHTML = orden.length ? '<h3 class="section-title">Rectificaciones</h3>' + orden.map(function (k) {
-      var g = grupos[k];
-      return '<div class="rect-group">Rectificación ' + esc(g.nro) + ' · ' + esc(g.fecha) + ' · ' + esc(g.usuario) +
-        (g.estadoSiga === 'CONCILIADA' ? ' · SIGA OK' : ' · SIGA pendiente') + '<br><span style="font-weight:500">Motivo: ' + esc(g.motivo) + '</span></div>' +
-        '<table class="tbl">' + g.items.map(function (x) {
-          return '<tr><td>' + esc(x.desc) + '<div class="m">Cód. ' + esc(x.codigo) + '</div></td><td class="n">' + (x.delta > 0 ? '+' : '−') + fmtN(Math.abs(x.delta)) + '</td></tr>';
-        }).join('') + '</table>';
-    }).join('') : '';
-    $('dt-incs').innerHTML = d.incidencias.length ? '<h3 class="section-title">Incidencias</h3><table class="tbl">' + d.incidencias.map(function (x) {
-      return '<tr><td>' + esc(x.barras) + '<div class="m">' + esc(x.tipo) + (x.detalle ? ' · ' + esc(x.detalle) : '') + ' · ' + esc(x.estado) +
-        '</div></td><td class="n">' + (x.cantidad ? fmtN(x.cantidad) : '') + '</td></tr>';
-    }).join('') + '</table>' : '';
-    go('detail');
+    renderDetail(d);
   }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
+}
+/** v2.3: dibuja el detalle (separado de openDetail para poder redibujar sin volver a pedirlo). */
+function renderDetail(d) {
+  S.detail = d;
+  var r = d.recepcion;
+  $('dt-title').textContent = r.id;
+  var op = opOf(r);
+  $('dt-head').innerHTML = '<div class="big">' + opBadge(op) + esc(opTitulo(r)) + '</div>' +
+    (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
+    (r.motivo && !esAjuste(op) && op !== 'INVENTARIO' ? 'Motivo: ' + esc(r.motivo) + '<br>' : '') +
+    'Inicio: ' + esc(r.inicio) + ' (' + esc(r.usuario) + ')<br>' +
+    (r.confirmadaEn ? 'Confirmada: ' + esc(r.confirmadaEn) + ' (' + esc(r.confirmadaPor) + ')<br>' : '') +
+    (r.conciliadaEn ? 'Conciliada SIGA: ' + esc(r.conciliadaEn) + ' (' + esc(r.conciliadaPor) + ')<br>' : '') +
+    '<b>' + fmtN(r.items) + '</b> productos · <b>' + fmtN(r.unidades) + '</b> unidades<br>' + estadoBadge(r) +
+    (r.observaciones ? '<p class="muted">' + esc(r.observaciones) + '</p>' : '');
+  var act = $('dt-actions');
+  act.innerHTML = '';
+  if (r.estado === 'CONFIRMADA') {
+    addAction(act, 'Exportar CSV', 'btn-ghost', function () { exportRecep(r.id); });
+    if (S.user.rol === 'ADMIN' && r.estadoSiga !== 'CONCILIADA' && op !== 'INVENTARIO') {
+      addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id); });
+    }
+    if (S.user.rol === 'ADMIN' && op !== 'INVENTARIO') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
+  }
+  $('dt-lines').innerHTML = d.lineas.length ? '<table class="tbl">' + d.lineas.map(function (l) {
+    var neto = l.unidadesNeto === undefined ? l.unidades : l.unidadesNeto;
+    var cant = neto !== l.unidades ? '<s>' + fmtN(l.unidades) + '</s>' + fmtN(neto) : fmtN(neto);
+    return '<tr><td>' + esc(l.desc) + (l.agregado ? ' <span class="badge badge-rect">AGREGADO</span>' : '') +
+      '<div class="m">' + esc(l.pres) + ' · Cód. ' + esc(l.codigo) + (l.lote ? ' · Lote ' + esc(l.lote) : '') +
+      (l.venc ? ' · Vto ' + esc(l.venc) : '') + '</div></td><td class="n">' + cant + '</td></tr>';
+  }).join('') + '</table>' : '';
+  // Historial de rectificaciones
+  var rect = d.rectificaciones || [];
+  var grupos = {}, orden = [];
+  rect.forEach(function (x) {
+    var m = String(x.id).match(/-R(\d+)-/); var k = m ? m[1] : '?';
+    if (!grupos[k]) { grupos[k] = { nro: k, fecha: x.fecha, usuario: x.usuario, motivo: x.motivo, estadoSiga: x.estadoSiga, items: [] }; orden.push(k); }
+    grupos[k].items.push(x);
+  });
+  $('dt-rect').innerHTML = orden.length ? '<h3 class="section-title">Rectificaciones</h3>' + orden.map(function (k) {
+    var g = grupos[k];
+    return '<div class="rect-group">Rectificación ' + esc(g.nro) + ' · ' + esc(g.fecha) + ' · ' + esc(g.usuario) +
+      (g.estadoSiga === 'CONCILIADA' ? ' · SIGA OK' : ' · SIGA pendiente') + '<br><span style="font-weight:500">Motivo: ' + esc(g.motivo) + '</span></div>' +
+      '<table class="tbl">' + g.items.map(function (x) {
+        return '<tr><td>' + esc(x.desc) + '<div class="m">Cód. ' + esc(x.codigo) + '</div></td><td class="n">' + (x.delta > 0 ? '+' : '−') + fmtN(Math.abs(x.delta)) + '</td></tr>';
+      }).join('') + '</table>';
+  }).join('') : '';
+  $('dt-incs').innerHTML = d.incidencias.length ? '<h3 class="section-title">Incidencias</h3><table class="tbl">' + d.incidencias.map(function (x) {
+    return '<tr><td>' + esc(x.barras) + '<div class="m">' + esc(x.tipo) + (x.detalle ? ' · ' + esc(x.detalle) : '') + ' · ' + esc(x.estado) +
+      '</div></td><td class="n">' + (x.cantidad ? fmtN(x.cantidad) : '') + '</td></tr>';
+  }).join('') + '</table>' : '';
+  go('detail');
 }
 function addAction(box, label, cls, fn) {
   var b = document.createElement('button');
@@ -2229,8 +2335,16 @@ function conciliar(id) {
     if (!ok) return;
     var nota = $('cc-nota').value;
     busy(true, 'Guardando…');
-    call('apiMarcarConciliada', S.token, id, nota).then(function () {
-      busy(false); toast('Marcada como conciliada', 'ok'); openDetail(id);
+    call('apiMarcarConciliada', S.token, id, nota).then(function (res) {
+      busy(false); toast('Marcada como conciliada', 'ok');
+      // v2.3: el servidor ya devuelve la cabecera actualizada; las líneas no cambian al
+      // conciliar y todos sus movimientos (incluidas las correcciones) quedan CONCILIADOS.
+      // Se redibuja sin volver a pedir el detalle.
+      if (res && res.recepcion && S.detail && S.detail.recepcion && S.detail.recepcion.id === id) {
+        S.detail.recepcion = res.recepcion;
+        (S.detail.rectificaciones || []).forEach(function (x) { x.estadoSiga = 'CONCILIADA'; });
+        renderDetail(S.detail);
+      } else openDetail(id);
     }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
   });
 }
