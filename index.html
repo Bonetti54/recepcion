@@ -7,6 +7,12 @@
   <meta name="theme-color" content="#17202B">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon-192.png" type="image/png">
+  <!-- v2.3.1: ícono y modo pantalla completa al "Agregar a inicio" en iPhone -->
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Recepción">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -263,6 +269,13 @@ textarea.input{resize:vertical;font-size:16px}
       <div class="keypad" id="pin-pad"></div>
     </div>
     <p class="login-msg" id="login-msg"></p>
+    <!-- v2.3.1: vincular desde la app (necesario en iPhone: el ícono de inicio no comparte datos con Safari) -->
+    <div id="link-box" class="pin-box hidden">
+      <label class="field-label" for="link-input">Vincular este celular</label>
+      <p class="hint">Pegá acá el <b>enlace de vinculación</b> que te pasó el administrador (el que se genera en la planilla con 📦 Recepción → 📷 Vincular app). Se hace una sola vez por celular.</p>
+      <textarea id="link-input" class="input" rows="3" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://…github.io/recepcion/#u=…&amp;k=…"></textarea>
+      <button class="btn btn-primary btn-lg" id="btn-link">VINCULAR</button>
+    </div>
   </section>
 
   <!-- ============ INICIO ============ -->
@@ -609,16 +622,31 @@ var store = {
  * --------------------------------------------------------------------- */
 var MODO = (window.google && google.script && google.script.run) ? 'google' : 'api';
 var API = null;
+/**
+ * Lee un enlace de vinculación (…#u=<url /exec codificada>&k=<llave>) y devuelve {u, k},
+ * o null si no es válido. v2.3.1: acepta el enlace completo o un texto que lo contenga
+ * (por ejemplo, pegado desde WhatsApp con texto antes o después).
+ */
+function leerEnlace(texto) {
+  var m = String(texto || '').match(/[#&?]u=([^&\s#]+)&k=([A-Za-z0-9]+)/);
+  if (!m) return null;
+  var u;
+  try { u = decodeURIComponent(m[1]); } catch (e) { return null; }
+  if (!/^https?:\/\//.test(u) || u.slice(-5) !== '/exec' || m[2].length < 6) return null;
+  return { u: u, k: m[2] };
+}
+function guardarVinculo(v) {
+  try { localStorage.setItem('rm_api', JSON.stringify(v)); } catch (e) {}
+  API = v;
+}
 (function initApi() {
   if (MODO !== 'api') return;
   var h = location.hash.replace(/^#/, '');
   if (h) {
+    // Igual que en la v2.3: el enlace abierto en el navegador se toma tal cual (#u=…&k=…).
     var q = {};
-    h.split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
-    if (q.u && q.k) {
-      try { localStorage.setItem('rm_api', JSON.stringify({ u: q.u, k: q.k })); } catch (e) {}
-      API = { u: q.u, k: q.k };
-    }
+    h.split('&').forEach(function (kv) { var i = kv.indexOf('='); if (i > 0) { try { q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); } catch (e) {} } });
+    if (q.u && q.k) guardarVinculo({ u: q.u, k: q.k });
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}  // oculta la llave
   }
   if (!API) { try { API = JSON.parse(localStorage.getItem('rm_api') || 'null'); } catch (e) { API = null; } }
@@ -718,7 +746,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.3.0';
+var FRONT_VERSION = '2.3.1';
 var API_REQUERIDA = 4;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -893,12 +921,42 @@ function loadUsers() {
       setTimeout(loadUsers, 5000);
       return;
     }
+    if (e.code === 'LLAVE') { mostrarVincular(e.msg); return; }   // v2.3.1: se puede vincular desde acá
     $('login-msg').textContent = (e.code === 'RED' && navigator.onLine === false)
       ? 'Sin conexión a internet. Se conecta solo cuando vuelva la señal. Si tenías una operación a medias, está guardada en este teléfono.'
       : e.msg;
-    if (e.code !== 'LLAVE') setTimeout(loadUsers, 5000);
+    setTimeout(loadUsers, 5000);
   });
 }
+
+/**
+ * v2.3.1: pantalla para pegar el enlace de vinculación. Aparece cuando este celular
+ * no tiene la llave (por ejemplo, en iPhone al abrir desde el ícono de inicio, que no
+ * comparte datos con Safari) o cuando la llave cambió en la planilla.
+ */
+function mostrarVincular(msg) {
+  if (MODO !== 'api') { $('login-msg').textContent = msg || ''; return; }
+  $('login-users').classList.add('hidden');
+  $('login-pin').classList.add('hidden');
+  $('link-box').classList.remove('hidden');
+  $('login-msg').textContent = 'Este celular no está vinculado. Pegá abajo el enlace de vinculación.';
+}
+$('btn-link').onclick = function () {
+  var v = leerEnlace($('link-input').value);
+  if (!v) {
+    $('login-msg').textContent = 'Ese texto no es un enlace de vinculación válido. Copialo completo (empieza con https:// y tiene #u= y &k=).';
+    return;
+  }
+  guardarVinculo(v);
+  $('link-input').value = '';
+  $('link-box').classList.add('hidden');
+  $('login-users').classList.remove('hidden');
+  $('login-users').innerHTML = '';
+  store.del('rm_users');
+  $('login-msg').textContent = '';
+  toast('Celular vinculado', 'ok');
+  loadUsers();
+};
 
 function selectPinUser(u) {
   pinUser = u; pinVal = '';
@@ -1800,7 +1858,7 @@ function setupQtySheet(q) {
     head.innerHTML = '<div class="d">PRODUCTO NO IDENTIFICADO</div><div class="m">Código ' + esc(q.bc) + ' · contá las unidades recibidas</div>';
   } else {
     head.innerHTML = '<div class="d">' + esc(p.d) + '</div><div class="m">' + esc(p.p) + ' · Cód. SIGA ' + esc(p.c) +
-      (p.x > 1 ? ' · Bulto x' + p.x : '') + (p.a ? '' : ' · <span class="badge badge-inact">INACTIVO EN SIGA</span>') + '</div>';
+      (p.x > 1 ? ' · Bulto x' + p.x : '') + (p.a ? '' : ' · <span class="badge badge-inact">DE BAJA EN SIGA</span>') + '</div>';
   }
   // Ya cargado
   var prev = $('q-prev');
@@ -1973,7 +2031,7 @@ function renderResults(list, code) {
     var b = document.createElement('button');
     b.className = 'item';
     b.innerHTML = '<div class="grow"><div class="t">' + esc(p.d) + '</div><div class="s">' + esc(p.p) + ' · Cód. ' + esc(p.c) +
-      (p.a ? '' : ' · INACTIVO') + '</div></div>';
+      (p.a ? '' : ' · DE BAJA EN SIGA') + '</div></div>';
     b.onclick = function () {
       var fu = S.searchFromUnknown;
       closeSheets(true);
