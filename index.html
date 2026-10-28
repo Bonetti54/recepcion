@@ -225,18 +225,23 @@ textarea.input{resize:vertical;font-size:16px}
 .toast.err{background:var(--red)}
 .toast.ok{background:var(--green)}
 
-.op-row{display:flex;gap:8px}
-.op-row .btn{flex:1;margin:0 0 8px;font-size:15px;padding:10px 6px;min-width:0;flex-direction:column;gap:2px;line-height:1.15}
+/* v2.4: cuatro botones en 2 x 2 (Devolución, Ajuste, Consumo interno, Inventario) */
+.op-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.op-row .btn{margin:0;font-size:15px;padding:10px 6px;min-width:0;flex-direction:column;gap:2px;line-height:1.15}
 .btn-dev{background:#5b21b6;color:#fff}
 .btn-aju{background:#b45309;color:#fff}
+.btn-con{background:#9d174d;color:#fff}
 .btn-inv{background:#0f5257;color:#fff}
 .badge-dev{background:#ede9fe;color:#5b21b6}
 .badge-aju{background:#ffedd5;color:#9a3412}
+.badge-con{background:#fce7f3;color:#9d174d}
 .badge-rect{background:#ffedd5;color:#9a3412}
 .badge-inv{background:#ccfbf1;color:#0f5257}
+.badge-anu{background:#f3d9d9;color:#7f1d1d}
 #scr-recep[data-op="INVENTARIO"] .topbar.dark{background:#0f5257}
 #scr-recep[data-op="DEVOLUCION"] .topbar.dark{background:#4c1d95}
 #scr-recep[data-op^="AJUSTE"] .topbar.dark{background:#7c2d12}
+#scr-recep[data-op="CONSUMO"] .topbar.dark{background:#831843}
 .chips.wrap{flex-wrap:wrap;padding:0;overflow:visible}
 .line.changed{border-left-color:#d97706;background:#fff7ed}
 .line .q s,.tbl s{color:#9aa3ad;font-size:15px;margin-right:4px}
@@ -247,6 +252,7 @@ textarea.input{resize:vertical;font-size:16px}
 @media (min-width:700px){
   .user-grid{grid-template-columns:repeat(3,1fr)}
   .keypad button{min-height:66px}
+  .op-row{grid-template-columns:repeat(4,1fr)}
 }
 </style>
 
@@ -289,6 +295,7 @@ textarea.input{resize:vertical;font-size:16px}
       <div class="op-row">
         <button class="btn btn-dev btn-lg" id="btn-new-dev">↩<br>DEVOLUCIÓN</button>
         <button class="btn btn-aju btn-lg" id="btn-new-aju">±<br>AJUSTE</button>
+        <button class="btn btn-con btn-lg" id="btn-new-con">🧾<br>CONSUMO INTERNO</button>
         <button class="btn btn-inv btn-lg" id="btn-new-inv">📋<br>INVENTARIO</button>
       </div>
       <h3 class="section-title">En proceso</h3>
@@ -298,7 +305,7 @@ textarea.input{resize:vertical;font-size:16px}
     </main>
   </section>
 
-  <!-- ============ NUEVA RECEPCIÓN ============ -->
+  <!-- ============ NUEVA OPERACIÓN ============ -->
   <section class="screen" id="scr-new">
     <header class="topbar">
       <button class="tb-back" data-go="home">‹</button>
@@ -340,7 +347,7 @@ textarea.input{resize:vertical;font-size:16px}
         <label class="field-label" id="motivo-label">Detalle (opcional)</label>
         <input id="motivo-det" class="input" maxlength="100" autocomplete="off">
       </div>
-      <p class="hint">Fecha, hora y usuario se registran solos.</p>
+      <p class="hint" id="new-hint">Fecha, hora y usuario se registran solos.</p>
       <button class="btn btn-primary btn-xl" id="btn-start">COMENZAR A ESCANEAR</button>
     </main>
   </section>
@@ -427,12 +434,13 @@ textarea.input{resize:vertical;font-size:16px}
       <button data-op="RECEPCION">Recepciones</button>
       <button data-op="DEVOLUCION">Devoluciones</button>
       <button data-op="AJUSTE">Ajustes</button>
+      <button data-op="CONSUMO">Consumo interno</button>
       <button data-op="INVENTARIO">Inventarios</button>
     </div>
     <main class="pad"><div id="hist-list" class="list"></div></main>
   </section>
 
-  <!-- ============ DETALLE DE RECEPCIÓN ============ -->
+  <!-- ============ DETALLE DE OPERACIÓN ============ -->
   <section class="screen" id="scr-detail">
     <header class="topbar">
       <button class="tb-back" data-go="history">‹</button>
@@ -560,7 +568,7 @@ textarea.input{resize:vertical;font-size:16px}
 var S = {
   token: null, user: null, cfg: {}, provs: [], enProceso: [],
   cat: null,           // {version, prods: Map, bc: Map, nz: Map, list: []}
-  recep: null,         // recepción abierta
+  recep: null,         // operación abierta
   qty: null,           // estado de la hoja de cantidad
   screen: null,
   lastActivity: Date.now(),
@@ -584,12 +592,15 @@ function cleanCode(s) { return String(s || '').toUpperCase().replace(/[^0-9A-Z]/
 
 // ---------- Tipos de operación
 var OPS = {
-  RECEPCION:   { palabra: 'recepción',  titulo: 'Nueva recepción',              badge: '',            cls: '' },
-  DEVOLUCION:  { palabra: 'devolución', titulo: 'Nueva devolución a proveedor', badge: 'DEVOLUCIÓN',  cls: 'badge-dev' },
-  AJUSTE_BAJA: { palabra: 'ajuste',     titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE BAJA', cls: 'badge-aju' },
-  AJUSTE_ALTA: { palabra: 'ajuste',     titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE ALTA', cls: 'badge-aju' },
-  INVENTARIO:  { palabra: 'inventario', titulo: 'Nuevo inventario',             badge: 'INVENTARIO',  cls: 'badge-inv' }
+  RECEPCION:   { palabra: 'recepción',       titulo: 'Nueva recepción',              badge: '',            cls: '',          nueva: '＋ NUEVA RECEPCIÓN',  hecha: 'Recepción confirmada' },
+  DEVOLUCION:  { palabra: 'devolución',      titulo: 'Nueva devolución a proveedor', badge: 'DEVOLUCIÓN',  cls: 'badge-dev', nueva: '＋ NUEVA DEVOLUCIÓN', hecha: 'Devolución confirmada' },
+  AJUSTE_BAJA: { palabra: 'ajuste',          titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE BAJA', cls: 'badge-aju', nueva: '＋ NUEVO AJUSTE',     hecha: 'Ajuste confirmado' },
+  AJUSTE_ALTA: { palabra: 'ajuste',          titulo: 'Nuevo ajuste de stock',        badge: 'AJUSTE ALTA', cls: 'badge-aju', nueva: '＋ NUEVO AJUSTE',     hecha: 'Ajuste confirmado' },
+  CONSUMO:     { palabra: 'consumo interno', titulo: 'Nuevo consumo interno',        badge: 'CONSUMO INT.', cls: 'badge-con', nueva: '＋ NUEVO CONSUMO INTERNO', hecha: 'Consumo interno confirmado' },
+  INVENTARIO:  { palabra: 'inventario',      titulo: 'Nuevo inventario',             badge: 'INVENTARIO',  cls: 'badge-inv', nueva: '＋ NUEVO INVENTARIO', hecha: 'Inventario confirmado' }
 };
+/** Botón de inicio de cada tipo (S.lastOp) -> clave de OPS para los textos. */
+function opDeBoton(b) { return b === 'AJUSTE' ? 'AJUSTE_BAJA' : (OPS[b] ? b : 'RECEPCION'); }
 function esProvInventario(p) { return !!p && provNorm(p.nombre) === 'INVENTARIO'; }
 function opOf(r) { var o = r && (r.operacion || r.op); return OPS[o] ? o : 'RECEPCION'; }
 function esAjuste(op) { return op === 'AJUSTE_BAJA' || op === 'AJUSTE_ALTA'; }
@@ -598,6 +609,7 @@ function opBadge(op) { var o = OPS[op] || OPS.RECEPCION; return o.badge ? '<span
 function opTitulo(r) {
   var op = opOf(r);
   if (esAjuste(op)) return 'Ajuste · ' + (r.motivo || '');
+  if (op === 'CONSUMO') return 'Consumo interno' + (r.motivo ? ' · ' + r.motivo : '');
   if (op === 'INVENTARIO') return 'Inventario' + (r.motivo ? ' · ' + r.motivo : '');
   return r.proveedor || r.prov || '';
 }
@@ -746,8 +758,8 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.3.1';
-var API_REQUERIDA = 4;          // versión del servidor que necesita esta pantalla
+var FRONT_VERSION = '2.4.0';
+var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
 function checkVersion(apiVersion) {
@@ -1011,7 +1023,7 @@ function afterLogin(inicio) {
     return ensureCatalog();
   }).then(function () {
     busy(false);
-    // Si había una recepción abierta antes de que venciera la sesión, volver a ella.
+    // Si había una operación abierta antes de que venciera la sesión, volver a ella.
     var cur = store.get('rm_cur');
     if (S.recep && S.recep.id) go('recep');
     else if (cur) openRecep(cur);
@@ -1049,7 +1061,7 @@ setInterval(function () {
   if (Date.now() - S.lastActivity > min * 60000) {
     S.token = null;
     closeSheets();
-    showLogin('Sesión cerrada por inactividad. Tu recepción quedó guardada.');
+    showLogin('Sesión cerrada por inactividad. Tu operación quedó guardada.');
   }
 }, 20000);
 
@@ -1179,39 +1191,39 @@ $('btn-history').onclick = function () { go('history'); };
 $('btn-new').onclick = function () { startNew('RECEPCION'); };
 $('btn-new-dev').onclick = function () { startNew('DEVOLUCION'); };
 $('btn-new-aju').onclick = function () { startNew('AJUSTE'); };
+$('btn-new-con').onclick = function () { startNew('CONSUMO'); };
 $('btn-new-inv').onclick = function () { startNew('INVENTARIO'); };
 $('btn-done-new').onclick = function () { startNew(S.lastOp || 'RECEPCION'); };
 
 // =====================================================================
-//  NUEVA RECEPCIÓN
+//  NUEVA OPERACIÓN
+//  v2.4: cada botón arma su formulario. INVENTARIO y CONSUMO INTERNO no llevan
+//  proveedor; RECEPCIÓN ya no ofrece el proveedor "INVENTARIO".
 // =====================================================================
 function startNew(op) {
-  if (op === 'INVENTARIO') {
-    S.lastOp = 'INVENTARIO';
-    startNew('RECEPCION');
-    S.lastOp = 'INVENTARIO';
-    var inv = S.provs.filter(esProvInventario)[0];
-    if (!inv) { toast('Falta actualizar el Codigo.gs para usar Inventario', 'err'); return; }
-    S.newRecep.prov = inv;
-    renderProvPicker();
-    setTimeout(function () { $('nro').focus(); }, 50);
-    return;
-  }
-  op = (op === 'DEVOLUCION' || op === 'AJUSTE') ? op : 'RECEPCION';
+  op = ['DEVOLUCION', 'AJUSTE', 'CONSUMO', 'INVENTARIO'].indexOf(op) >= 0 ? op : 'RECEPCION';
   S.lastOp = op;
   S.newRecep = { op: op, prov: null, tipo: 'REMITO', clientId: uid(), signo: 'BAJA', motivo: '' };
-  var aj = op === 'AJUSTE';
-  $('new-title').textContent = aj ? 'Nuevo ajuste de stock' : op === 'DEVOLUCION' ? 'Nueva devolución a proveedor' : 'Nueva recepción';
-  $('prov-box').classList.toggle('hidden', aj);
-  $('comp-box').classList.toggle('hidden', aj);
+  var aj = op === 'AJUSTE', con = op === 'CONSUMO', inv = op === 'INVENTARIO';
+  var conProv = op === 'RECEPCION' || op === 'DEVOLUCION';
+  $('new-title').textContent = aj ? 'Nuevo ajuste de stock' : con ? 'Nuevo consumo interno' : inv ? 'Nuevo inventario'
+    : op === 'DEVOLUCION' ? 'Nueva devolución a proveedor' : 'Nueva recepción';
+  $('prov-box').classList.toggle('hidden', !conProv);
+  $('comp-box').classList.toggle('hidden', !(conProv || inv));
+  $('tipo-seg').classList.toggle('hidden', inv);
+  $('comp-label').textContent = inv ? 'Sector o góndola (opcional)' : 'Comprobante';
   $('aj-box').classList.toggle('hidden', !aj);
-  $('motivo-box').classList.toggle('hidden', op === 'RECEPCION');
+  $('motivo-box').classList.toggle('hidden', !(aj || op === 'DEVOLUCION'));
   $('motivo-label').textContent = aj ? 'Detalle (opcional)' : 'Motivo de la devolución (opcional)';
   $('motivo-det').placeholder = aj ? 'Ej.: góndola 4, caja aplastada' : 'Ej.: vencidos, mal estado, error de pedido';
   $('motivo-det').value = '';
+  $('new-hint').textContent = con
+    ? 'Para lo que se saca del stock y se usa en el local: insumos, golosinas de vuelto, cajas que se abren, etc. Escaneá lo que se sacó y confirmá. Fecha, hora y usuario se registran solos.'
+    : inv ? 'Conteo de stock: no es una recepción. Va a la hoja INVENTARIO y queda pendiente de cargar en SIGA. Fecha, hora y usuario se registran solos.'
+    : 'Fecha, hora y usuario se registran solos.';
   document.querySelector('#tipo-seg [data-v="FACTURA"]').classList.toggle('hidden', op !== 'RECEPCION');
   document.querySelector('#tipo-seg [data-v="NOTA DE CREDITO"]').classList.toggle('hidden', op !== 'DEVOLUCION');
-  $('nro').placeholder = op === 'DEVOLUCION' ? 'Nº de remito o nota de crédito (opcional)' : 'Nº de remito / factura';
+  $('nro').placeholder = inv ? 'Ej.: Góndola 4, Depósito, Lácteos' : op === 'DEVOLUCION' ? 'Nº de remito o nota de crédito (opcional)' : 'Nº de remito / factura';
   $('nro').value = '';
   $('prov-search').value = '';
   setTipo('REMITO');
@@ -1220,6 +1232,7 @@ function startNew(op) {
   renderProvPicker();
   $('btn-prov-new').classList.toggle('hidden', !S.cfg.permitirAltaProveedor);
   go('new');
+  if (inv) setTimeout(function () { $('nro').focus(); }, 50);
   // refrescar proveedores en segundo plano
   call('apiInicio', S.token).then(function (d) { S.provs = d.proveedores; S.enProceso = d.enProceso; S.cfg = d.config; renderProvPicker(); renderMotivos(); }).catch(function () {});
 }
@@ -1231,8 +1244,9 @@ document.querySelectorAll('#signo-seg button').forEach(function (b) { b.onclick 
 function renderMotivos() {
   var box = $('motivo-chips');
   box.innerHTML = '';
-  var lista = (S.cfg.motivosAjuste && S.cfg.motivosAjuste.length) ? S.cfg.motivosAjuste : ['ROTURA', 'VENCIDO', 'ROBO / FALTANTE', 'CONSUMO INTERNO', 'DIFERENCIA DE INVENTARIO', 'OTRO'];
+  var lista = (S.cfg.motivosAjuste && S.cfg.motivosAjuste.length) ? S.cfg.motivosAjuste : ['ROTURA', 'VENCIDO', 'ROBO / FALTANTE', 'DIFERENCIA DE INVENTARIO', 'OTRO'];
   lista.forEach(function (m) {
+    if (norm(m) === 'CONSUMO INTERNO') return;   // v2.4: tiene su propio botón
     var b = document.createElement('button');
     b.textContent = m;
     b.className = S.newRecep.motivo === m ? 'on' : '';
@@ -1256,32 +1270,19 @@ function provItem(p, box) {
   if (p.fantasia) sub.push(p.fantasia);
   if (p.cuit) sub.push('CUIT ' + p.cuit);
   if (p.codigo) sub.push('Cód. ' + p.codigo);
-  if (esProvInventario(p)) sub = ['Conteo de stock: no es una recepción, va a la hoja INVENTARIO'];
-  b.innerHTML = '<div class="grow"><div class="t">' + (esProvInventario(p) ? '<span class="badge badge-inv">CONTEO</span> ' : '') + esc(p.nombre) + '</div>' + (sub.length ? '<div class="s">' + esc(sub.join(' · ')) + '</div>' : '') + '</div>';
+  b.innerHTML = '<div class="grow"><div class="t">' + esc(p.nombre) + '</div>' + (sub.length ? '<div class="s">' + esc(sub.join(' · ')) + '</div>' : '') + '</div>';
   b.onclick = function () {
     S.newRecep.prov = p; renderProvPicker();
     if (!$('comp-box').classList.contains('hidden')) $('nro').focus();
   };
   box.appendChild(b);
 }
-/** Proveedores que se ofrecen: "INVENTARIO" solo en Nueva recepción (y primero en la lista). */
+/** v2.4: el proveedor especial "INVENTARIO" no se ofrece nunca (el inventario tiene su botón). */
 function provsVisibles() {
-  var inv = S.provs.filter(esProvInventario);
-  var resto = S.provs.filter(function (p) { return !esProvInventario(p); });
-  return S.newRecep.op === 'RECEPCION' ? inv.concat(resto) : resto;
-}
-/** Adapta el formulario cuando se elige el proveedor INVENTARIO (es un conteo, no una recepción). */
-function adaptarFormInventario() {
-  var inv = S.newRecep.op === 'RECEPCION' && esProvInventario(S.newRecep.prov);
-  S.newRecep.esInv = inv;
-  $('new-title').textContent = inv ? 'Nuevo inventario' : (S.newRecep.op === 'DEVOLUCION' ? 'Nueva devolución a proveedor' : S.newRecep.op === 'AJUSTE' ? 'Nuevo ajuste de stock' : 'Nueva recepción');
-  $('tipo-seg').classList.toggle('hidden', inv);
-  $('comp-label').textContent = inv ? 'Sector o góndola (opcional)' : 'Comprobante';
-  $('nro').placeholder = inv ? 'Ej.: Góndola 4, Depósito, Lácteos' : (S.newRecep.op === 'DEVOLUCION' ? 'Nº de remito o nota de crédito (opcional)' : 'Nº de remito / factura');
+  return S.provs.filter(function (p) { return !esProvInventario(p); });
 }
 function renderProvPicker() {
   var sel = S.newRecep.prov;
-  adaptarFormInventario();
   $('prov-selected').classList.toggle('hidden', !sel);
   $('prov-picker').classList.toggle('hidden', !!sel);
   if (sel) {
@@ -1355,15 +1356,17 @@ $('btn-start').onclick = function () {
   var n = S.newRecep, op = n.op, aj = op === 'AJUSTE';
   var nro = $('nro').value.trim();
   var det = $('motivo-det').value.trim();
-  if (!aj && !n.prov) return toast('Elegí un proveedor', 'err');
-  if (op === 'RECEPCION' && !n.esInv && !nro && S.cfg.exigirNro) { $('nro').focus(); return toast('Ingresá el Nº de remito o factura', 'err'); }
+  var conProv = op === 'RECEPCION' || op === 'DEVOLUCION';
+  if (conProv && !n.prov) return toast('Elegí un proveedor', 'err');
+  if (op === 'RECEPCION' && !nro && S.cfg.exigirNro) { $('nro').focus(); return toast('Ingresá el Nº de remito o factura', 'err'); }
   if (aj && !n.motivo) return toast('Elegí el motivo del ajuste', 'err');
-  var motivo = aj ? (n.motivo + (det ? ' - ' + det : '')) : det;
-  busy(true, 'Creando ' + (n.esInv ? 'inventario' : palabra(aj ? 'AJUSTE_BAJA' : op)) + '…');
-  call('apiCrearRecepcion', S.token, {
-    clientId: n.clientId, operacion: aj ? 'AJUSTE_' + n.signo : op,
-    proveedorId: n.prov ? n.prov.id : '', tipo: aj ? '' : n.tipo, nro: aj ? '' : nro, motivo: motivo
-  }).then(function (d) {
+  var opServ = aj ? 'AJUSTE_' + n.signo : op;
+  var datos = { clientId: n.clientId, operacion: opServ, proveedorId: conProv ? n.prov.id : '', tipo: conProv ? n.tipo : '', nro: '', motivo: '' };
+  if (conProv) { datos.nro = nro; datos.motivo = det; }
+  else if (aj) datos.motivo = n.motivo + (det ? ' - ' + det : '');
+  else if (op === 'INVENTARIO') { datos.nro = nro; datos.motivo = nro; }   // sector
+  busy(true, 'Creando ' + palabra(opServ) + '…');
+  call('apiCrearRecepcion', S.token, datos).then(function (d) {
     busy(false);
     var r = d.recepcion;
     if (n.prov) guardarProvReciente(n.prov.id);
@@ -1388,20 +1391,20 @@ function newRecepObj(r) {
 }
 
 // =====================================================================
-//  ABRIR / GUARDAR RECEPCIÓN
+//  ABRIR / GUARDAR OPERACIÓN
 // =====================================================================
 function openRecep(id) {
   // v2.3: si la operación está guardada en este teléfono, se abre al instante con esa
   // copia y se verifica con el servidor sin hacer esperar.
   var copia = store.get('rm_draft_' + id);
   if (copia && copia.id === id && copia.lines) return openRecepLocal(id, copia);
-  busy(true, 'Abriendo recepción…');
+  busy(true, 'Abriendo…');
   call('apiAbrirRecepcion', S.token, id).then(function (d) {
     busy(false);
     var r = d.recepcion;
     if (r.estado !== 'EN PROCESO') {
       store.del('rm_draft_' + id); store.del('rm_cur');
-      alertMsg('Recepción ' + r.estado, 'La recepción ' + id + ' ya está ' + r.estado + '.');
+      alertMsg('Operación ' + r.estado, 'La operación ' + id + ' ya está ' + r.estado + '.');
       return go('home');
     }
     var local = store.get('rm_draft_' + id);
@@ -1426,14 +1429,14 @@ function openRecep(id) {
     if (e.code === 'RED' && local) {
       S.recep = local; store.set('rm_cur', id); go('recep'); toast('Sin conexión: trabajando con la copia del teléfono', 'err');
     } else if (e.code === 'NO_EXISTE') {
-      store.del('rm_cur'); alertMsg('No existe', e.msg); go('home');
+      store.del('rm_cur'); store.del('rm_draft_' + id); alertMsg('No existe', e.msg); go('home');
     } else if (e.code !== 'SESION') { alertMsg('No se pudo abrir', e.msg); go('home'); }
   });
 }
 
 /**
  * v2.3: abre con la copia del teléfono y después confirma con el servidor, sin bloquear:
- *  - si ya no está EN PROCESO (se confirmó o anuló desde otro lado), avisa y vuelve al inicio;
+ *  - si ya no está EN PROCESO (se confirmó, anuló o eliminó desde otro lado), avisa y vuelve al inicio;
  *  - si la planilla tiene una versión más nueva (otro celular siguió cargando), la toma,
  *    con la misma regla que antes (gana la de número de versión mayor);
  *  - si no, sigue con la del teléfono.
@@ -1454,7 +1457,7 @@ function openRecepLocal(id, rec) {
         S.recep = null; S.camMode = false;
         closeSheets(true);
         go('home');
-        alertMsg('Recepción ' + r.estado, 'La recepción ' + id + ' ya está ' + r.estado + '.');
+        alertMsg('Operación ' + r.estado, 'La operación ' + id + ' ya está ' + r.estado + '.');
       }
       return;
     }
@@ -1471,8 +1474,10 @@ function openRecepLocal(id, rec) {
   }).catch(function (e) {
     var sigue = S.recep && S.recep.id === id;
     if (e.code === 'NO_EXISTE') {
+      // v2.4: también pasa si la eliminaron desde otro celular
       store.del('rm_draft_' + id); store.del('rm_cur');
-      if (sigue) { S.recep = null; S.camMode = false; closeSheets(true); go('home'); alertMsg('No existe', e.msg); }
+      S.enProceso = S.enProceso.filter(function (x) { return x.id !== id; });
+      if (sigue) { S.recep = null; S.camMode = false; closeSheets(true); go('home'); alertMsg('Ya no existe', 'La operación ' + id + ' fue eliminada.'); }
     } else if (e.code === 'RED') {
       if (sigue) toast('Sin conexión: trabajando con la copia del teléfono', 'err');
     } else if (e.code !== 'SESION' && sigue) {
@@ -1527,8 +1532,8 @@ function doSync() {
   }).catch(function (e) {
     S.syncing = false;
     setSync('err');
-    if (e.code === 'ESTADO') {
-      alertMsg('Recepción cerrada', e.msg);
+    if (e.code === 'ESTADO' || e.code === 'NO_EXISTE') {
+      alertMsg('Operación cerrada', e.msg);
       store.del('rm_draft_' + id); store.del('rm_cur'); S.recep = null; go('home');
     } else if (e.code !== 'SESION') scheduleSync(8000);
   });
@@ -1544,7 +1549,7 @@ window.addEventListener('online', function () {
 });
 
 // =====================================================================
-//  PANTALLA DE RECEPCIÓN
+//  PANTALLA DE ESCANEO
 // =====================================================================
 function lineUnits(l) {
   var p = S.cat && S.cat.prods.get(l.c);
@@ -1567,6 +1572,7 @@ function renderRecep() {
   var comp = opComprobante(r);
   $('r-prov').textContent = esAjuste(op) ? (op === 'AJUSTE_BAJA' ? 'Baja · ' : 'Alta · ') + r.motivo
     : op === 'INVENTARIO' ? 'Conteo de inventario' + (r.motivo ? ' · ' + r.motivo : '')
+    : op === 'CONSUMO' ? 'Consumo interno'
     : (r.prov + (comp ? ' · ' + comp : ''));
   var t = totals(r);
   $('st-items').textContent = fmtN(t.items);
@@ -1623,7 +1629,7 @@ function showLastScan(msg, ok) {
   el.className = 'last-scan ' + (ok ? 'ok' : 'err');
 }
 
-/** Agrega cantidad a la recepción (acumula si el artículo ya está). */
+/** Agrega cantidad a la operación (acumula si el artículo ya está). */
 function addToRecep(cod, bc, bultos, units, lote, venc) {
   var r = S.recep;
   lote = (lote || '').trim().toUpperCase();
@@ -1647,29 +1653,48 @@ function addToRecep(cod, bc, bultos, units, lote, venc) {
 }
 
 $('btn-recep-back').onclick = function () {
-  // La recepción queda EN PROCESO: se respalda y se puede retomar desde el inicio.
+  // La operación queda EN PROCESO: se respalda y se puede retomar desde el inicio.
   if (S.recep && S.recep.rev > S.recep.srvRev) doSync();
   store.del('rm_cur');
   S.recep = null;
   go('home');
 };
+/**
+ * v2.4: menú ⋯ de la pantalla de escaneo. "Eliminar" borra la operación por completo
+ * (para volver a hacerla desde cero). Las operaciones ya confirmadas se ANULAN desde
+ * el Historial (solo ADMIN).
+ */
 $('btn-recep-menu').onclick = function () {
-  modal('Recepción ' + S.recep.id, '<p>' + esc(S.recep.prov) + '<br>' + esc(S.recep.tipo + ' ' + S.recep.nro) + '</p>',
-    [{ label: 'Volver', value: '' }, { label: 'Anular', value: 'anular', cls: 'btn-danger' }]
+  var r = S.recep;
+  var op = opOf(r);
+  var conProv = op === 'RECEPCION' || op === 'DEVOLUCION';
+  var desc = conProv ? esc(r.prov) + (opComprobante(r) ? '<br>' + esc(opComprobante(r)) : '') : esc(opTitulo(r));
+  modal(palabra(op).charAt(0).toUpperCase() + palabra(op).slice(1) + ' ' + r.id, '<p>' + desc + '</p>' +
+    '<p class="muted">Si te equivocaste de comprobante o querés empezar de nuevo, eliminala. Una operación confirmada se anula desde el Historial (administrador).</p>',
+    [{ label: 'Volver', value: '' }, { label: '🗑 Eliminar', value: 'eliminar', cls: 'btn-danger' }]
   ).then(function (v) {
-    if (v !== 'anular') return;
-    modal('Anular recepción', '<p>La recepción quedará registrada como ANULADA. Indicá el motivo:</p><input id="an-mot" class="input" maxlength="200">',
-      [{ label: 'Cancelar', value: false }, { label: 'Anular', value: true, cls: 'btn-danger' }]
+    if (v !== 'eliminar') return;
+    var t = totals(r);
+    modal('¿Eliminar ' + palabra(op) + '?', '<p>Se borra <b>por completo</b>' + (t.items || t.inc ? ' con lo que escaneaste (' + fmtN(t.items) + ' productos, ' + fmtN(t.units) + ' unidades)' : '') +
+      ' y podés volver a hacerla desde cero.</p><p class="muted">No queda como anulada ni en el historial. No se puede deshacer.</p>',
+      [{ label: 'Cancelar', value: false }, { label: 'Eliminar', value: true, cls: 'btn-danger' }]
     ).then(function (ok) {
       if (!ok) return;
-      var mot = $('an-mot').value;
-      busy(true, 'Anulando…');
-      call('apiAnularRecepcion', S.token, S.recep.id, mot).then(function () {
+      var id = r.id;
+      clearTimeout(S.syncTimer);
+      busy(true, 'Eliminando…');
+      call('apiEliminarOperacion', S.token, id).then(function () {
         busy(false);
-        store.del('rm_draft_' + S.recep.id); store.del('rm_cur');
-        S.enProceso = S.enProceso.filter(function (x) { return x.id !== S.recep.id; });
-        S.recep = null; toast('Recepción anulada'); go('home');
-      }).catch(function (e) { busy(false); alertMsg('No se pudo anular', e.msg); });
+        store.del('rm_draft_' + id); store.del('rm_cur');
+        S.enProceso = S.enProceso.filter(function (x) { return x.id !== id; });
+        S.recep = null; S.camMode = false;
+        toast('Eliminada', 'ok'); go('home');
+      }).catch(function (e) {
+        busy(false);
+        if (e.code === 'SESION') return;
+        alertMsg('No se pudo eliminar', e.msg);
+        if (S.recep && S.recep.rev > S.recep.srvRev) scheduleSync(1000);
+      });
     });
   });
 };
@@ -1855,7 +1880,7 @@ function setupQtySheet(q) {
   var head = $('q-head');
   head.className = 'qty-head' + (q.mode === 'inc' ? ' unk' : '');
   if (q.mode === 'inc') {
-    head.innerHTML = '<div class="d">PRODUCTO NO IDENTIFICADO</div><div class="m">Código ' + esc(q.bc) + ' · contá las unidades recibidas</div>';
+    head.innerHTML = '<div class="d">PRODUCTO NO IDENTIFICADO</div><div class="m">Código ' + esc(q.bc) + ' · contá las unidades</div>';
   } else {
     head.innerHTML = '<div class="d">' + esc(p.d) + '</div><div class="m">' + esc(p.p) + ' · Cód. SIGA ' + esc(p.c) +
       (p.x > 1 ? ' · Bulto x' + p.x : '') + (p.a ? '' : ' · <span class="badge badge-inact">DE BAJA EN SIGA</span>') + '</div>';
@@ -1929,7 +1954,7 @@ $('q-cancel').onclick = function () { closeSheets(); };
 $('q-ok').onclick = function () { qtyOk(); };
 $('q-delete').onclick = function () {
   var key = S.qty.key;
-  modal('Eliminar producto', '<p>¿Quitar este artículo de la recepción?</p>',
+  modal('Eliminar producto', '<p>¿Quitar este artículo de la lista?</p>',
     [{ label: 'No', value: false }, { label: 'Eliminar', value: true, cls: 'btn-danger' }]
   ).then(function (ok) {
     if (!ok) return;
@@ -2188,8 +2213,9 @@ function renderConfirm() {
   $('btn-confirm').textContent = '✔ CONFIRMAR ' + palabra(op, true);
   var cab;
   if (esAjuste(op)) cab = '<div class="big">' + (op === 'AJUSTE_BAJA' ? 'AJUSTE · BAJA DE STOCK' : 'AJUSTE · ALTA DE STOCK') + '</div>Motivo: <b>' + esc(r.motivo) + '</b><br>';
+  else if (op === 'CONSUMO') cab = '<div class="big">' + opBadge(op) + 'Consumo interno</div>Al confirmar se <b>resta del stock</b> y queda pendiente de cargar en SIGA.<br>';
   else if (op === 'INVENTARIO') cab = '<div class="big">' + opBadge(op) + 'Conteo de inventario</div>' + (r.motivo ? esc(r.motivo) + '<br>' : '') +
-    'Al confirmar se agrega a la hoja <b>INVENTARIO</b> (no modifica el stock ni va a Pendientes SIGA).<br>';
+    'Al confirmar se agrega a la hoja <b>INVENTARIO</b> y queda pendiente de cargar en SIGA (no modifica el stock).<br>';
   else cab = '<div class="big">' + opBadge(op) + esc(r.prov) + '</div>' + (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
              (r.motivo ? 'Motivo: ' + esc(r.motivo) + '<br>' : '');
   $('cf-head').innerHTML = cab + 'Operación ' + esc(r.id) + ' · iniciada ' + esc(r.inicio) + '<br>Responsable: <b>' + esc(S.user.nombre) + '</b>';
@@ -2221,7 +2247,7 @@ $('btn-confirm').onclick = function () {
   var t = totals(r);
   modal('¿Confirmar ' + palabra(opOf(r)) + '?', '<p><b>' + fmtN(t.items) + '</b> productos · <b>' + fmtN(t.units) + '</b> unidades' +
     (t.inc ? ' · <b>' + t.inc + '</b> incidencias' : '') + '</p>' + (opOf(r) === 'INVENTARIO' ? '<p>Se agrega a la hoja <b>INVENTARIO</b>. Después de confirmar <b>no se puede modificar</b>: si hubo un error, se hace un nuevo conteo.</p>'
-      : '<p>Después de confirmar <b>no se puede modificar</b>. Las correcciones las hace un administrador.</p>'),
+      : '<p>Después de confirmar <b>no se puede modificar</b>. Las correcciones (o la anulación) las hace un administrador.</p>'),
     [{ label: 'Revisar', value: false }, { label: 'CONFIRMAR', value: true, cls: 'btn-confirm' }]
   ).then(function (ok) { if (ok) sendConfirm(); });
 };
@@ -2239,9 +2265,8 @@ function sendConfirm() {
     S.enProceso = S.enProceso.filter(function (x) { return x.id !== r.id; });
     S.recep = null;
     $('done-id').textContent = h.id;
-    $('done-title').textContent = esAjuste(opConf) ? 'Ajuste confirmado' : opConf === 'DEVOLUCION' ? 'Devolución confirmada' : opConf === 'INVENTARIO' ? 'Inventario confirmado' : 'Recepción confirmada';
-    if (opConf === 'INVENTARIO') S.lastOp = 'INVENTARIO';
-    $('btn-done-new').textContent = S.lastOp === 'INVENTARIO' ? '＋ NUEVO INVENTARIO' : '＋ NUEVA ' + (S.lastOp === 'AJUSTE' ? 'AJUSTE' : S.lastOp === 'DEVOLUCION' ? 'DEVOLUCIÓN' : 'RECEPCIÓN');
+    $('done-title').textContent = OPS[opConf].hecha;
+    $('btn-done-new').textContent = OPS[opDeBoton(S.lastOp || 'RECEPCION')].nueva;
     $('done-info').innerHTML = esc(opTitulo(h)) + (opComprobante(h) ? '<br>' + esc(opComprobante(h)) : '') + '<br>' + fmtN(h.items) + ' productos · ' +
       fmtN(h.unidades) + ' unidades' + (h.incidencias ? ' · ' + h.incidencias + ' incidencias' : '') +
       '<br>Confirmada por ' + esc(h.confirmadaPor) + ' · ' + esc(h.confirmadaEn) + (d.yaConfirmada ? '<br><i>(ya estaba confirmada)</i>' : '');
@@ -2280,13 +2305,17 @@ function estadoBadge(r) {
     else if (r.estadoSiga === 'CONCILIADA') s += ' <span class="badge badge-conc">SIGA OK</span>';
     else if (r.estadoSiga === 'RECTIFICADA') s += ' <span class="badge badge-rect">SIGA: CORRECCIÓN PEND.</span>';
     else s += ' <span class="badge badge-pend">SIGA PEND.</span>';
+  } else if (r.estado === 'ANULADA') {
+    if (r.estadoSiga === 'ANULACION') s += ' <span class="badge badge-anu">SIGA: REVERTIR PEND.</span>';
+    else if (r.estadoSiga === 'CONCILIADA') s += ' <span class="badge badge-conc">REVERTIDA EN SIGA</span>';
   }
   if (r.rectificaciones) s += ' <span class="badge badge-rect">✎ RECTIFICADA</span>';
   return s;
 }
 function loadHistory() {
   var f = S.histFilter;
-  var filtro = f === 'SIGA' ? { estado: 'CONFIRMADA', estadoSiga: 'PENDIENTE' } : f ? { estado: f } : {};
+  // v2.4: "Pendientes SIGA" incluye las anulaciones a revertir (operaciones ANULADAS)
+  var filtro = f === 'SIGA' ? { estadoSiga: 'PENDIENTE' } : f ? { estado: f } : {};
   if (S.histOp) filtro.operacion = S.histOp;
   $('hist-list').innerHTML = '<div class="empty-small">Cargando…</div>';
   call('apiHistorial', S.token, filtro).then(function (d) {
@@ -2319,22 +2348,27 @@ function renderDetail(d) {
   var r = d.recepcion;
   $('dt-title').textContent = r.id;
   var op = opOf(r);
+  var admin = S.user.rol === 'ADMIN';
   $('dt-head').innerHTML = '<div class="big">' + opBadge(op) + esc(opTitulo(r)) + '</div>' +
     (opComprobante(r) ? esc(r.tipo) + ' Nº <b>' + esc(r.nro) + '</b><br>' : '') +
-    (r.motivo && !esAjuste(op) && op !== 'INVENTARIO' ? 'Motivo: ' + esc(r.motivo) + '<br>' : '') +
+    (r.motivo && !esAjuste(op) && op !== 'INVENTARIO' && op !== 'CONSUMO' ? 'Motivo: ' + esc(r.motivo) + '<br>' : '') +
     'Inicio: ' + esc(r.inicio) + ' (' + esc(r.usuario) + ')<br>' +
     (r.confirmadaEn ? 'Confirmada: ' + esc(r.confirmadaEn) + ' (' + esc(r.confirmadaPor) + ')<br>' : '') +
-    (r.conciliadaEn ? 'Conciliada SIGA: ' + esc(r.conciliadaEn) + ' (' + esc(r.conciliadaPor) + ')<br>' : '') +
+    (r.anuladaEn ? '<b>Anulada: ' + esc(r.anuladaEn) + ' (' + esc(r.anuladaPor) + ')</b> · Motivo: ' + esc(r.motivoAnulacion) + '<br>' : '') +
+    (r.conciliadaEn ? (r.estado === 'ANULADA' ? 'Revertida en SIGA: ' : 'Cargada en SIGA: ') + esc(r.conciliadaEn) + ' (' + esc(r.conciliadaPor) + ')<br>' : '') +
     '<b>' + fmtN(r.items) + '</b> productos · <b>' + fmtN(r.unidades) + '</b> unidades<br>' + estadoBadge(r) +
     (r.observaciones ? '<p class="muted">' + esc(r.observaciones) + '</p>' : '');
   var act = $('dt-actions');
   act.innerHTML = '';
   if (r.estado === 'CONFIRMADA') {
     addAction(act, 'Exportar CSV', 'btn-ghost', function () { exportRecep(r.id); });
-    if (S.user.rol === 'ADMIN' && r.estadoSiga !== 'CONCILIADA' && op !== 'INVENTARIO') {
-      addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id); });
+    if (admin && (r.estadoSiga === 'PENDIENTE' || r.estadoSiga === 'RECTIFICADA')) {
+      addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : op === 'INVENTARIO' ? 'Marcar inventario cargado en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id, r); });
     }
-    if (S.user.rol === 'ADMIN' && op !== 'INVENTARIO') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
+    if (admin && op !== 'INVENTARIO') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
+    if (admin) addAction(act, '⊘ Anular', 'btn-danger', function () { anular(r); });
+  } else if (r.estado === 'ANULADA' && admin && r.estadoSiga === 'ANULACION') {
+    addAction(act, 'Marcar anulación hecha en SIGA', 'btn-primary', function () { conciliar(r.id, r); });
   }
   $('dt-lines').innerHTML = d.lineas.length ? '<table class="tbl">' + d.lineas.map(function (l) {
     var neto = l.unidadesNeto === undefined ? l.unidades : l.unidadesNeto;
@@ -2354,7 +2388,7 @@ function renderDetail(d) {
   $('dt-rect').innerHTML = orden.length ? '<h3 class="section-title">Rectificaciones</h3>' + orden.map(function (k) {
     var g = grupos[k];
     return '<div class="rect-group">Rectificación ' + esc(g.nro) + ' · ' + esc(g.fecha) + ' · ' + esc(g.usuario) +
-      (g.estadoSiga === 'CONCILIADA' ? ' · SIGA OK' : ' · SIGA pendiente') + '<br><span style="font-weight:500">Motivo: ' + esc(g.motivo) + '</span></div>' +
+      (g.estadoSiga === 'CONCILIADA' ? ' · SIGA OK' : g.estadoSiga === 'NO APLICA' ? ' · no se carga (anulada)' : ' · SIGA pendiente') + '<br><span style="font-weight:500">Motivo: ' + esc(g.motivo) + '</span></div>' +
       '<table class="tbl">' + g.items.map(function (x) {
         return '<tr><td>' + esc(x.desc) + '<div class="m">Cód. ' + esc(x.codigo) + '</div></td><td class="n">' + (x.delta > 0 ? '+' : '−') + fmtN(Math.abs(x.delta)) + '</td></tr>';
       }).join('') + '</table>';
@@ -2374,36 +2408,63 @@ function exportRecep(id) {
   busy(true, 'Generando archivo…');
   call('apiExportarRecepcion', S.token, id).then(function (d) {
     busy(false);
-    var ok = false;
     try {
       var blob = new Blob([d.csv], { type: 'text/csv;charset=utf-8' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = d.nombre;
-      document.body.appendChild(a); a.click(); a.remove(); ok = true;
+      document.body.appendChild(a); a.click(); a.remove();
     } catch (e) {}
     modal('Archivo generado', '<p>' + esc(d.nombre) + '</p><p>Se guardó en Drive (carpeta "Recepción de Mercadería - Archivos").</p>' +
       '<p><a href="' + esc(d.url) + '" target="_blank" rel="noopener">Abrir en Drive</a></p>');
   }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
 }
-function conciliar(id) {
-  modal('Conciliar con SIGA', '<p>Confirmá que esta operación (y sus correcciones, si las tiene) ya fue <b>cargada y verificada en SIGA</b>.</p>' +
+function conciliar(id, r) {
+  var esAnul = r && r.estado === 'ANULADA';
+  var texto = esAnul
+    ? '<p>Confirmá que esta operación anulada ya fue <b>revertida en SIGA</b>.</p>'
+    : '<p>Confirmá que esta operación (y sus correcciones, si las tiene) ya fue <b>cargada y verificada en SIGA</b>.</p>';
+  modal(esAnul ? 'Anulación hecha en SIGA' : 'Conciliar con SIGA', texto +
     '<label class="field-label">Nota (opcional, ej. Nº de comprobante en SIGA)</label><input id="cc-nota" class="input" maxlength="200">',
-    [{ label: 'Cancelar', value: false }, { label: 'Conciliar', value: true, cls: 'btn-primary' }]
+    [{ label: 'Cancelar', value: false }, { label: 'Confirmar', value: true, cls: 'btn-primary' }]
   ).then(function (ok) {
     if (!ok) return;
     var nota = $('cc-nota').value;
     busy(true, 'Guardando…');
     call('apiMarcarConciliada', S.token, id, nota).then(function (res) {
-      busy(false); toast('Marcada como conciliada', 'ok');
+      busy(false); toast(esAnul ? 'Marcada como revertida en SIGA' : 'Marcada como cargada en SIGA', 'ok');
       // v2.3: el servidor ya devuelve la cabecera actualizada; las líneas no cambian al
-      // conciliar y todos sus movimientos (incluidas las correcciones) quedan CONCILIADOS.
-      // Se redibuja sin volver a pedir el detalle.
+      // conciliar y todos sus movimientos pendientes quedan CONCILIADOS.
       if (res && res.recepcion && S.detail && S.detail.recepcion && S.detail.recepcion.id === id) {
         S.detail.recepcion = res.recepcion;
-        (S.detail.rectificaciones || []).forEach(function (x) { x.estadoSiga = 'CONCILIADA'; });
+        (S.detail.rectificaciones || []).forEach(function (x) { if (x.estadoSiga === 'PENDIENTE') x.estadoSiga = 'CONCILIADA'; });
         renderDetail(S.detail);
       } else openDetail(id);
     }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
+  });
+}
+/** v2.4: ANULAR una operación confirmada (solo ADMIN). */
+function anular(r) {
+  var op = opOf(r);
+  var cargada = r.estadoSiga === 'CONCILIADA' || r.estadoSiga === 'RECTIFICADA';
+  var efecto = op === 'INVENTARIO'
+    ? 'El conteo deja de contar (no cambia el stock).'
+    : 'Se devuelve el stock: la operación queda en cero.';
+  modal('¿Anular ' + palabra(op) + ' ' + r.id + '?', '<p>' + efecto + '</p>' +
+    (cargada ? '<p><b>Ya estaba cargada en SIGA:</b> va a aparecer en los pendientes para revertirla allá.</p>'
+             : '<p>Todavía no estaba cargada en SIGA: no hay que hacer nada allá.</p>') +
+    '<p class="muted">Queda registrada como ANULADA (no se borra). No se puede deshacer.</p>' +
+    '<label class="field-label">Motivo (obligatorio)</label><input id="an-mot" class="input" maxlength="200" placeholder="Ej.: el proveedor canceló, se cargó dos veces…">',
+    [{ label: 'Cancelar', value: false }, { label: 'Anular', value: true, cls: 'btn-danger' }]
+  ).then(function (ok) {
+    if (!ok) return;
+    var mot = $('an-mot').value.trim();
+    if (mot.length < 3) { toast('Escribí el motivo de la anulación', 'err'); return; }
+    busy(true, 'Anulando…');
+    call('apiAnularRecepcion', S.token, r.id, mot).then(function (d) {
+      busy(false);
+      toast(d.revertirEnSiga ? 'Anulada: queda pendiente de revertir en SIGA' : 'Anulada', 'ok');
+      openDetail(r.id);
+    }).catch(function (e) { busy(false); if (e.code !== 'SESION') alertMsg('No se pudo anular', e.msg); });
   });
 }
 

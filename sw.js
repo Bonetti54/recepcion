@@ -13,7 +13,7 @@
  *
  * Para publicar un cambio de este archivo, subir el número de CACHE.
  */
-var CACHE = 'recepcion-v2.3.0';
+var CACHE = 'recepcion-v2.4.0';
 var PANTALLA = './index.html';
 var ESTATICOS = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 var LIBRERIAS = ['https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'];
