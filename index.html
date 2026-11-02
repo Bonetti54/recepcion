@@ -249,6 +249,28 @@ textarea.input{resize:vertical;font-size:16px}
 .rect-group{margin:10px 0 4px;font-size:14px;color:#9a3412;font-weight:700}
 .ver-banner{position:sticky;top:0;z-index:30;background:#fff3cd;color:#664d03;border-bottom:1px solid #f1d27a;padding:10px 14px;font-weight:600;font-size:15px}
 .ver-banner button{margin-left:8px;border:1px solid #c9a227;background:#fff;border-radius:8px;padding:4px 10px;font-weight:700}
+
+/* v2.5: comparación con factura */
+.fx-tot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.fx-tot div{border-radius:12px;padding:10px 4px;text-align:center;border:1px solid var(--line);background:var(--card)}
+.fx-tot b{display:block;font-family:var(--cond);font-size:32px;line-height:1.1}
+.fx-tot span{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+.fx-tot .t-ok b{color:var(--green)} .fx-tot .t-falta b{color:var(--red)} .fx-tot .t-sobra b{color:var(--warn)} .fx-tot .t-rev b{color:#8a6d00}
+.fx-plata{background:#FCE9E7;border:1px solid #F4C2BD;color:var(--red);border-radius:12px;padding:10px 14px;font-weight:700;font-size:18px;margin:6px 0}
+.fx-plata.cero{background:#D9F2E5;border-color:#B9E3CC;color:#075C39}
+.fx-l{background:var(--card);border:1px solid var(--line);border-left:7px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}
+.fx-l .d{font-weight:700;font-size:16px;line-height:1.25}
+.fx-l .e{font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px}
+.fx-l .q{display:flex;gap:14px;margin-top:6px;font-size:15px}
+.fx-l .q b{font-family:var(--cond);font-size:21px}
+.fx-l .m{font-size:12.5px;color:var(--muted);margin-top:4px}
+.fx-l .btn{margin:8px 0 0;padding:8px 12px;font-size:15px}
+.fx-FALTANTE,.fx-NO{border-left-color:var(--red)} .fx-FALTANTE .e,.fx-NO .e{color:var(--red)}
+.fx-DE,.fx-NOFACT{border-left-color:var(--warn)} .fx-DE .e,.fx-NOFACT .e{color:var(--warn)}
+.fx-REVISAR{border-left-color:#e0b100;background:#fffbea} .fx-REVISAR .e{color:#8a6d00}
+.fx-CORRECTO,.fx-NUEVO{border-left-color:var(--green)} .fx-CORRECTO .e,.fx-NUEVO .e{color:var(--green)}
+.fx-sub{display:flex;gap:8px;margin:10px 0}.fx-sub .btn{flex:1;margin:0}
+.fx-hint{font-size:14px;color:var(--muted);line-height:1.45}
 @media (min-width:700px){
   .user-grid{grid-template-columns:repeat(3,1fr)}
   .keypad button{min-height:66px}
@@ -415,8 +437,25 @@ textarea.input{resize:vertical;font-size:16px}
       <h2 id="done-title">Recepción confirmada</h2>
       <div class="done-id" id="done-id"></div>
       <p id="done-info" class="muted"></p>
+      <button class="btn btn-confirm btn-xl hidden" id="btn-done-fact">📄 COMPARAR CON FACTURA</button>
       <button class="btn btn-primary btn-xl" id="btn-done-new">＋ NUEVA RECEPCIÓN</button>
       <button class="btn btn-ghost btn-lg" data-go="home">Ir al inicio</button>
+    </main>
+  </section>
+
+  <!-- ============ v2.5: COMPARACIÓN CON FACTURA ============ -->
+  <section class="screen" id="scr-fact">
+    <header class="topbar">
+      <button class="tb-back" id="fx-back">‹</button>
+      <div class="tb-title" id="fx-title">Control de factura</div>
+      <button class="tb-btn" id="fx-refresh" title="Volver a comparar">↻</button>
+    </header>
+    <main class="pad">
+      <div class="summary-card" id="fx-head"></div>
+      <div id="fx-body"></div>
+      <input type="file" id="fx-foto" accept="image/*" capture="environment" multiple class="hidden">
+      <input type="file" id="fx-pdf" accept="application/pdf,image/*" multiple class="hidden">
+      <div style="height:40px"></div>
     </main>
   </section>
 
@@ -699,7 +738,8 @@ function callApi(fn, args, timeoutMs, meta) {
  * Las que escriben (crear, confirmar, guardar…) siguen igual: 40 s y sin reintento
  * automático, porque ya tienen su botón "Reintentar" seguro.
  */
-var LECTURAS = { apiListarUsuarios: 1, apiInicio: 1, apiHistorial: 1, apiVerRecepcion: 1, apiAbrirRecepcion: 1 };
+var LARGAS = { apiCompararFactura: 1, apiAsignarRenglon: 1 };
+var LECTURAS = { apiVerControlFactura: 1, apiListarUsuarios: 1, apiInicio: 1, apiHistorial: 1, apiVerRecepcion: 1, apiAbrirRecepcion: 1 };
 
 /**
  * Llama a una función del servidor. Devuelve una promesa con data o rechaza {code,msg}.
@@ -707,7 +747,7 @@ var LECTURAS = { apiListarUsuarios: 1, apiInicio: 1, apiHistorial: 1, apiVerRece
  */
 function call(fn) {
   var args = Array.prototype.slice.call(arguments, 1);
-  var timeoutMs = fn === 'apiCatalogo' ? 120000 : (LECTURAS[fn] ? 20000 : 40000);
+  var timeoutMs = fn === 'apiCatalogo' || LARGAS[fn] ? 150000 : (LECTURAS[fn] ? 20000 : 40000);
   var meta = { srv: '' };
   var t0 = Date.now();
   var enviar = function () { return MODO === 'api' ? callApi(fn, args, timeoutMs, meta) : callGas(fn, args, timeoutMs, meta); };
@@ -758,7 +798,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.4.0';
+var FRONT_VERSION = '2.5.0';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -2265,6 +2305,8 @@ function sendConfirm() {
     S.enProceso = S.enProceso.filter(function (x) { return x.id !== r.id; });
     S.recep = null;
     $('done-id').textContent = h.id;
+    S.ultimaConf = h;
+    $('btn-done-fact').classList.toggle('hidden', opConf !== 'RECEPCION');
     $('done-title').textContent = OPS[opConf].hecha;
     $('btn-done-new').textContent = OPS[opDeBoton(S.lastOp || 'RECEPCION')].nueva;
     $('done-info').innerHTML = esc(opTitulo(h)) + (opComprobante(h) ? '<br>' + esc(opComprobante(h)) : '') + '<br>' + fmtN(h.items) + ' productos · ' +
@@ -2365,6 +2407,7 @@ function renderDetail(d) {
     if (admin && (r.estadoSiga === 'PENDIENTE' || r.estadoSiga === 'RECTIFICADA')) {
       addAction(act, r.estadoSiga === 'RECTIFICADA' ? 'Marcar corrección cargada en SIGA' : op === 'INVENTARIO' ? 'Marcar inventario cargado en SIGA' : 'Marcar conciliada SIGA', 'btn-primary', function () { conciliar(r.id, r); });
     }
+    if (op === 'RECEPCION') addAction(act, '📄 Factura', 'btn-confirm', function () { abrirFactura(r, 'detail'); });
     if (admin && op !== 'INVENTARIO') addAction(act, '✎ Rectificar', 'btn-warn', function () { openRect(); });
     if (admin) addAction(act, '⊘ Anular', 'btn-danger', function () { anular(r); });
   } else if (r.estado === 'ANULADA' && admin && r.estadoSiga === 'ANULACION') {
@@ -2617,6 +2660,136 @@ if (MODO === 'api') {
 }
 
 showLogin('');
+// =====================================================================
+//  v2.5: COMPARACIÓN CON FACTURA
+// =====================================================================
+var FX = { rec: null, volver: 'home', data: null };
+$('btn-done-fact').onclick = function () { if (S.ultimaConf) abrirFactura(S.ultimaConf, 'done'); };
+$('fx-back').onclick = function () { go(FX.volver === 'detail' ? 'detail' : 'home'); };
+$('fx-refresh').onclick = function () { if (FX.rec) compararFactura(); };
+$('fx-foto').onchange = function () { subirAdjuntos(this.files); this.value = ''; };
+$('fx-pdf').onchange = function () { subirAdjuntos(this.files); this.value = ''; };
+
+function abrirFactura(rec, volver) {
+  FX.rec = rec; FX.volver = volver; FX.data = null;
+  $('fx-title').textContent = 'Factura · ' + rec.id;
+  $('fx-head').innerHTML = '<div class="big">' + esc(rec.proveedor) + '</div>' + (rec.nro ? esc(rec.tipo || 'Comprobante') + ' Nº <b>' + esc(rec.nro) + '</b>' : '');
+  $('fx-body').innerHTML = '';
+  go('fact');
+  busy(true, 'Buscando el control…');
+  call('apiVerControlFactura', S.token, rec.id).then(function (d) {
+    busy(false);
+    if (d && !d.sinControl) pintarFactura(d); else compararFactura();
+  }).catch(function () { busy(false); compararFactura(); });
+}
+function compararFactura(adjuntos, idFactura) {
+  busy(true, adjuntos ? 'Leyendo la factura… (puede tardar hasta 1 minuto)' : 'Comparando con la factura…');
+  call('apiCompararFactura', S.token, FX.rec.id, adjuntos || null, idFactura || null).then(function (d) {
+    busy(false);
+    if (d.sinFactura) return pintarSinFactura(d);
+    if (d.candidatas) return pintarCandidatas(d.candidatas);
+    pintarFactura(d);
+    beep(d.totales.faltan + d.totales.sobran + d.totales.revisar === 0);
+  }).catch(function (e) { busy(false); if (e.code !== 'SESION') alertMsg('No se pudo comparar', e.msg); });
+}
+function pintarSinFactura(d) {
+  $('fx-body').innerHTML = '<div class="summary-card"><b>La factura todavía no llegó.</b><p class="fx-hint">Cuando el proveedor la mande por mail a <b>' +
+    esc(d.mail || 'el mail de facturas') + '</b> (o la guardes desde WhatsApp en la carpeta "Facturas › Entrantes"), tocá ↻ arriba.</p>' +
+    '<p class="fx-hint">Si la tenés en papel, sacale una foto a cada hoja (apoyada, con buena luz y entera):</p></div>' +
+    '<div class="fx-sub"><button class="btn btn-primary btn-lg" id="fx-b-foto">📷 Sacar foto</button><button class="btn btn-ghost btn-lg" id="fx-b-pdf">📎 Subir PDF</button></div>';
+  $('fx-b-foto').onclick = function () { $('fx-foto').click(); };
+  $('fx-b-pdf').onclick = function () { $('fx-pdf').click(); };
+}
+function pintarCandidatas(c) {
+  $('fx-body').innerHTML = '<div class="summary-card"><b>Hay varias facturas posibles de este proveedor.</b><p class="fx-hint">Elegí la que corresponde a esta mercadería:</p></div>' +
+    c.map(function (f, i) { return '<button class="btn btn-ghost btn-lg" data-fx="' + i + '">Nº ' + esc(f.nro) + ' · ' + esc(f.fecha) + ' · ' + fmtN(f.renglones) + ' renglones</button>'; }).join('');
+  document.querySelectorAll('[data-fx]').forEach(function (b) { b.onclick = function () { compararFactura(null, c[+b.getAttribute('data-fx')].id); }; });
+}
+function plata(n) { return '$ ' + Number(Math.abs(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
+function claseFx(e) { return 'fx-' + String(e).split(/[ ·]/)[0].replace('Á', 'A').replace('Ó', 'O').replace('NO', e === 'NO FACTURADO' ? 'NOFACT' : 'NO'); }
+function pintarFactura(d) {
+  FX.data = d;
+  var f = d.factura, t = d.totales, admin = S.user.rol === 'ADMIN';
+  $('fx-head').innerHTML = '<div class="big">' + esc(f.proveedor || FX.rec.proveedor) + '</div>Factura Nº <b>' + esc(f.nro) + '</b>' + (f.fecha ? ' · ' + esc(f.fecha) : '') +
+    '<br><span class="fx-hint">Recepción ' + esc(FX.rec.id) + (f.como ? ' · emparejada por ' + esc(f.como) : '') + '</span>' +
+    (f.archivoId ? '<br><a href="https://drive.google.com/file/d/' + encodeURIComponent(f.archivoId) + '/view" target="_blank" rel="noopener">Ver factura</a>' : '');
+  var h = '<div class="fx-tot"><div class="t-ok"><b>' + t.ok + '</b><span>✔ Correctos</span></div><div class="t-falta"><b>' + t.faltan + '</b><span>✖ Faltan</span></div>' +
+    '<div class="t-sobra"><b>' + t.sobran + '</b><span>➕ Sobran</span></div></div>';
+  if (t.revisar) h += '<div class="fx-l fx-REVISAR"><div class="e">Revisar</div><div class="d">' + t.revisar + ' renglón(es) de la factura no se encontraron en lo recibido</div></div>';
+  if (admin && t.reclamar !== null) h += '<div class="fx-plata' + (t.reclamar > 0 ? '' : ' cero') + '">' + (t.reclamar > 0 ? '💲 A reclamar: ' + plata(t.reclamar) : '✔ Nada para reclamar') + '</div>';
+  var malos = d.lineas.filter(function (l) { return l.estado !== 'CORRECTO' && l.estado !== 'NUEVO · CORRECTO'; });
+  var buenos = d.lineas.filter(function (l) { return l.estado === 'CORRECTO' || l.estado === 'NUEVO · CORRECTO'; });
+  if (!malos.length) h += '<div class="summary-card" style="text-align:center;font-size:20px;font-weight:700;color:var(--green)">✔ Todo coincide con la factura</div>';
+  h += malos.map(lineaFx).join('');
+  if (buenos.length) h += '<button class="btn btn-ghost btn-lg" id="fx-ver-ok">✔ Ver ' + buenos.length + ' correctos</button><div id="fx-ok" class="hidden">' + buenos.map(lineaFx).join('') + '</div>';
+  $('fx-body').innerHTML = h;
+  var vo = $('fx-ver-ok'); if (vo) vo.onclick = function () { $('fx-ok').classList.toggle('hidden'); vo.classList.add('hidden'); };
+  document.querySelectorAll('[data-asig]').forEach(function (b) { b.onclick = function () { asignarRenglon(+b.getAttribute('data-asig')); }; });
+}
+function lineaFx(l) {
+  var admin = S.user.rol === 'ADMIN';
+  var dif = l.dif === null || l.dif === undefined ? '' : (l.dif > 0 ? '+' : l.dif < 0 ? '−' : '') + fmtN(Math.abs(l.dif));
+  var titulo = { 'FALTANTE': 'Faltan ' + fmtN(Math.abs(l.dif)), 'NO LLEGÓ': 'No llegó', 'DE MÁS': 'Sobran ' + fmtN(l.dif), 'NO FACTURADO': 'Llegó sin facturar',
+    'REVISAR': '¿Qué producto es?', 'CORRECTO': 'Correcto', 'NUEVO · CORRECTO': '🆕 Nuevo · correcto' }[l.estado] || l.estado;
+  var cls = l.estado === 'NO FACTURADO' ? 'fx-NOFACT' : l.estado === 'NO LLEGÓ' ? 'fx-NO' : l.estado === 'DE MÁS' ? 'fx-DE' : l.estado === 'NUEVO · CORRECTO' ? 'fx-NUEVO' : 'fx-' + l.estado;
+  return '<div class="fx-l ' + cls + '"><div class="e">' + esc(titulo) + (l.nuevo && l.estado !== 'NUEVO · CORRECTO' ? ' · 🆕 nuevo' : '') + '</div>' +
+    '<div class="d">' + esc(l.desc) + '</div>' +
+    '<div class="q"><span>Factura <b>' + fmtN(l.fac) + '</b></span><span>Llegó <b>' + (l.rec === null || l.rec === undefined ? '?' : fmtN(l.rec)) + '</b></span>' +
+    (dif ? '<span>Dif. <b>' + dif + '</b></span>' : '') + '</div>' +
+    (admin && l.importe ? '<div class="m">' + (l.importe < 0 ? 'Reclamar ' : 'Valor ') + plata(l.importe) + ' · ' + plata(l.precio) + ' c/u con IVA</div>' : '') +
+    (l.nota ? '<div class="m">' + esc(l.nota) + '</div>' : '') +
+    (l.codigo ? '<div class="m">Cód. ' + esc(l.codigo) + '</div>' : l.barras ? '<div class="m">Barras ' + esc(l.barras) + '</div>' : '') +
+    (l.estado === 'REVISAR' && l.nro ? '<button class="btn btn-primary" data-asig="' + l.nro + '">Elegir producto</button>' : '') + '</div>';
+}
+function asignarRenglon(nro) {
+  var d = FX.data, lin = d.lineas.filter(function (l) { return l.nro === nro; })[0];
+  var opciones = d.lineas.filter(function (l) { return l.estado === 'NO FACTURADO'; });
+  if (!opciones.length) return alertMsg('Sin opciones', 'No hay productos recibidos sin facturar para asignar. Si no llegó, dejalo como está.');
+  modal('¿Qué producto es?', '<p><b>' + esc(lin.desc) + '</b> · factura ' + fmtN(lin.fac) + '</p><p class="fx-hint">Elegí lo que llegó (queda aprendido para la próxima):</p>' +
+    opciones.map(function (o, i) { return '<button class="btn btn-ghost" style="width:100%;margin:4px 0" data-op="' + i + '">' + esc(o.desc) + ' · llegó ' + fmtN(o.rec) + '</button>'; }).join(''),
+    [{ label: 'Cancelar', value: null }]);
+  document.querySelectorAll('#m-body [data-op]').forEach(function (b) {
+    b.onclick = function () {
+      var o = opciones[+b.getAttribute('data-op')];
+      $('modal').classList.add('hidden');
+      busy(true, 'Guardando…');
+      call('apiAsignarRenglon', S.token, FX.rec.id, d.factura.id, nro, o.codigo ? 'C:' + o.codigo : 'B:' + o.barras).then(function (r) {
+        busy(false); pintarFactura(r); toast('Asignado y aprendido', 'ok');
+      }).catch(function (e) { busy(false); alertMsg('Error', e.msg); });
+    };
+  });
+}
+/** Fotos: se achican en el celular (máx. 1800 px) para que suban rápido. PDF: tal cual (máx. 15 MB). */
+function subirAdjuntos(files) {
+  if (!files || !files.length) return;
+  busy(true, 'Preparando ' + files.length + ' archivo(s)…');
+  Promise.all(Array.prototype.map.call(files, prepararArchivo)).then(function (adj) {
+    busy(false); compararFactura(adj);
+  }).catch(function (e) { busy(false); alertMsg('No se pudo leer el archivo', String(e && e.message || e)); });
+}
+function prepararArchivo(file) {
+  return new Promise(function (resolve, reject) {
+    var fr = new FileReader();
+    if (/pdf/i.test(file.type)) {
+      if (file.size > 15e6) return reject(new Error('El PDF pesa más de 15 MB.'));
+      fr.onload = function () { resolve({ nombre: file.name, mime: 'application/pdf', b64: String(fr.result).split(',')[1] }); };
+      fr.onerror = reject; fr.readAsDataURL(file); return;
+    }
+    fr.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 1800 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve({ nombre: file.name || 'foto.jpg', mime: 'image/jpeg', b64: c.toDataURL('image/jpeg', 0.82).split(',')[1] });
+      };
+      img.onerror = function () { reject(new Error('Imagen no válida')); };
+      img.src = fr.result;
+    };
+    fr.onerror = reject; fr.readAsDataURL(file);
+  });
+}
+
 </script>
 
 </body>
