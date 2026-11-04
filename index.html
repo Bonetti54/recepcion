@@ -798,7 +798,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.5.0';
+var FRONT_VERSION = '2.5.2';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -2686,11 +2686,45 @@ function compararFactura(adjuntos, idFactura) {
   busy(true, adjuntos ? 'Leyendo la factura… (puede tardar hasta 1 minuto)' : 'Comparando con la factura…');
   call('apiCompararFactura', S.token, FX.rec.id, adjuntos || null, idFactura || null).then(function (d) {
     busy(false);
+    if (d.recepcion) { FX.rec.tipo = d.recepcion.tipo; FX.rec.nro = d.recepcion.nro; toast('Comprobante corregido: ' + d.recepcion.nro, 'ok'); }
     if (d.sinFactura) return pintarSinFactura(d);
-    if (d.candidatas) return pintarCandidatas(d.candidatas);
+    if (d.candidatas) return pintarCandidatas(d.candidatas, d);
     pintarFactura(d);
     beep(d.totales.faltan + d.totales.sobran + d.totales.revisar === 0);
   }).catch(function (e) { busy(false); if (e.code !== 'SESION') alertMsg('No se pudo comparar', e.msg); });
+}
+/** Acciones que siempre están: usar otra factura, foto, PDF y (ADMIN) corregir el número de comprobante. */
+function barraFx() {
+  var admin = S.user && S.user.rol === 'ADMIN';
+  return '<div class="summary-card"><div class="fx-hint" style="margin-bottom:8px"><b>¿No es la factura correcta?</b></div>' +
+    '<div class="fx-sub"><button class="btn btn-ghost btn-lg" id="fx-otra">📄 Usar otra factura</button>' +
+    '<button class="btn btn-ghost btn-lg" id="fx-b-foto2">📷 Foto</button><button class="btn btn-ghost btn-lg" id="fx-b-pdf2">📎 PDF</button></div>' +
+    (admin ? '<button class="btn btn-ghost btn-lg" style="width:100%;margin-top:6px" id="fx-nro">✏️ Corregir Nº de ' + esc((FX.rec.tipo || 'comprobante').toLowerCase()) + ' (' + esc(FX.rec.nro || 'sin número') + ')</button>' : '') +
+    '</div>';
+}
+function enlazarBarraFx() {
+  var o = $('fx-otra'); if (o) o.onclick = function () { compararFactura(null, '__LISTA__'); };
+  var f = $('fx-b-foto2'); if (f) f.onclick = function () { $('fx-foto').click(); };
+  var p = $('fx-b-pdf2'); if (p) p.onclick = function () { $('fx-pdf').click(); };
+  var n = $('fx-nro'); if (n) n.onclick = corregirNro;
+}
+function corregirNro() {
+  var tipo = String(FX.rec.tipo || 'FACTURA').toUpperCase();
+  modal('Corregir comprobante', '<p class="fx-hint">Recepción ' + esc(FX.rec.id) + ' · ' + esc(FX.rec.proveedor) + '</p>' +
+    '<label>Tipo</label><select id="fx-n-tipo" style="width:100%;font-size:18px;padding:8px;margin:4px 0 10px">' +
+    ['FACTURA', 'REMITO'].map(function (x) { return '<option' + (x === tipo ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select>' +
+    '<label>Número (como figura en el papel, ej. 06531-00001564)</label>' +
+    '<input id="fx-n-nro" style="width:100%;font-size:18px;padding:8px;margin-top:4px;box-sizing:border-box" value="' + esc(FX.rec.nro || '') + '">',
+    [{ label: 'Cancelar', value: null }, { label: 'Guardar y comparar', value: true, cls: 'btn-primary' }]);
+  // se leen los valores antes de que el modal se cierre
+  var guardar = $('m-actions').lastChild, tipoSel, nroVal;
+  var orig = guardar.onclick;
+  guardar.onclick = function () {
+    tipoSel = $('fx-n-tipo').value; nroVal = $('fx-n-nro').value.trim();
+    orig.call(this);
+    if (!nroVal) return alertMsg('Falta el número', 'Escribí el número del comprobante.');
+    compararFactura(null, { accion: 'NRO', tipo: tipoSel, nro: nroVal });
+  };
 }
 function pintarSinFactura(d) {
   $('fx-body').innerHTML = '<div class="summary-card"><b>La factura todavía no llegó.</b><p class="fx-hint">Cuando el proveedor la mande por mail a <b>' +
@@ -2699,11 +2733,26 @@ function pintarSinFactura(d) {
     '<div class="fx-sub"><button class="btn btn-primary btn-lg" id="fx-b-foto">📷 Sacar foto</button><button class="btn btn-ghost btn-lg" id="fx-b-pdf">📎 Subir PDF</button></div>';
   $('fx-b-foto').onclick = function () { $('fx-foto').click(); };
   $('fx-b-pdf').onclick = function () { $('fx-pdf').click(); };
+  if (S.user && S.user.rol === 'ADMIN') {
+    $('fx-body').insertAdjacentHTML('beforeend', '<button class="btn btn-ghost btn-lg" style="width:100%;margin-top:6px" id="fx-nro">✏️ Corregir Nº de comprobante (' + esc(FX.rec.nro || 'sin número') + ')</button>' +
+      '<button class="btn btn-ghost btn-lg" style="width:100%;margin-top:6px" id="fx-otra">📄 Elegir otra factura del proveedor</button>');
+    enlazarBarraFx();
+  }
 }
-function pintarCandidatas(c) {
-  $('fx-body').innerHTML = '<div class="summary-card"><b>Hay varias facturas posibles de este proveedor.</b><p class="fx-hint">Elegí la que corresponde a esta mercadería:</p></div>' +
-    c.map(function (f, i) { return '<button class="btn btn-ghost btn-lg" data-fx="' + i + '">Nº ' + esc(f.nro) + ' · ' + esc(f.fecha) + ' · ' + fmtN(f.renglones) + ' renglones</button>'; }).join('');
+function pintarCandidatas(c, d) {
+  d = d || {};
+  if (!c.length) {
+    $('fx-body').innerHTML = '<div class="summary-card"><b>No hay otras facturas de este proveedor en el sistema.</b><p class="fx-hint">' + esc(d.aviso || 'Subila con foto o PDF.') + '</p></div>' + barraFx();
+    return enlazarBarraFx();
+  }
+  $('fx-body').innerHTML = '<div class="summary-card"><b>' + (d.lista ? 'Facturas de este proveedor' : 'Hay varias facturas posibles de este proveedor.') + '</b>' +
+    (d.aviso ? '<p class="fx-hint">' + esc(d.aviso) + '</p>' : '') + '<p class="fx-hint">Elegí la que corresponde a esta mercadería:</p></div>' +
+    c.map(function (f, i) {
+      return '<button class="btn btn-ghost btn-lg" style="width:100%;margin:4px 0" data-fx="' + i + '">Nº ' + esc(f.nro) + ' · ' + esc(f.fecha) + ' · ' + fmtN(f.renglones) + ' renglones' +
+        (f.origen ? ' · ' + esc(f.origen) : '') + (f.actual ? ' · ✔ actual' : '') + '</button>';
+    }).join('') + barraFx();
   document.querySelectorAll('[data-fx]').forEach(function (b) { b.onclick = function () { compararFactura(null, c[+b.getAttribute('data-fx')].id); }; });
+  enlazarBarraFx();
 }
 function plata(n) { return '$ ' + Number(Math.abs(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 }); }
 function claseFx(e) { return 'fx-' + String(e).split(/[ ·]/)[0].replace('Á', 'A').replace('Ó', 'O').replace('NO', e === 'NO FACTURADO' ? 'NOFACT' : 'NO'); }
@@ -2722,7 +2771,8 @@ function pintarFactura(d) {
   if (!malos.length) h += '<div class="summary-card" style="text-align:center;font-size:20px;font-weight:700;color:var(--green)">✔ Todo coincide con la factura</div>';
   h += malos.map(lineaFx).join('');
   if (buenos.length) h += '<button class="btn btn-ghost btn-lg" id="fx-ver-ok">✔ Ver ' + buenos.length + ' correctos</button><div id="fx-ok" class="hidden">' + buenos.map(lineaFx).join('') + '</div>';
-  $('fx-body').innerHTML = h;
+  $('fx-body').innerHTML = h + barraFx();
+  enlazarBarraFx();
   var vo = $('fx-ver-ok'); if (vo) vo.onclick = function () { $('fx-ok').classList.toggle('hidden'); vo.classList.add('hidden'); };
   document.querySelectorAll('[data-asig]').forEach(function (b) { b.onclick = function () { asignarRenglon(+b.getAttribute('data-asig')); }; });
 }
