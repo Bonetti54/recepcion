@@ -799,7 +799,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.5.3';
+var FRONT_VERSION = '2.6.0';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -1043,6 +1043,8 @@ function doLogin() {
   call('apiLogin', pinUser.usuario, pinVal, true).then(function (d) {
     S.token = d.token; S.user = d.user; S.lastActivity = Date.now();
     pinVal = '';
+    // v2.6: aviso (sin bloquear) si el PIN tiene menos de 6 números
+    if (d.pinCorto) setTimeout(function () { toast('Tu PIN es corto: pedile al administrador uno de 6 números', 'warn'); }, 1200);
     return afterLogin(d.inicio);
   }).catch(function (e) {
     busy(false);
