@@ -592,7 +592,8 @@ textarea.input{resize:vertical;font-size:16px}
 <div class="busy hidden" id="busy"><div class="spinner"></div><div id="busy-msg">Cargando…</div></div>
 <div class="toast hidden" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Lector de cámara (html5-qrcode 2.3.8) guardado en nuestro GitHub, con control de integridad (SRI): si el archivo se altera, el navegador no lo ejecuta. -->
+<script src="https://bonetti54.github.io/recepcion/html5-qrcode.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
 <script>
 /* =====================================================================
  *  RECEPCIÓN DE MERCADERÍA — Aplicación del celular
@@ -798,7 +799,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.5.2';
+var FRONT_VERSION = '2.5.3';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */

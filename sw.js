@@ -13,10 +13,10 @@
  *
  * Para publicar un cambio de este archivo, subir el número de CACHE.
  */
-var CACHE = 'recepcion-v2.5.2';
+var CACHE = 'recepcion-v2.5.3';
 var PANTALLA = './index.html';
-var ESTATICOS = ['./manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
-var LIBRERIAS = ['https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js'];
+var ESTATICOS = ['./manifest.webmanifest', './html5-qrcode.min.js', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
+var LIBRERIAS = ['https://bonetti54.github.io/recepcion/html5-qrcode.min.js'];
 
 self.addEventListener('install', function (event) {
   event.waitUntil(
