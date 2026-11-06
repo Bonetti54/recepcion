@@ -799,7 +799,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.6.0';
+var FRONT_VERSION = '2.6.2';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -1551,7 +1551,7 @@ function touch() {
   S.recep.rev++;
   saveLocal();
   setSync('pending');
-  scheduleSync(1500);
+  scheduleSync(S.syncLento ? 6000 : 2500);
 }
 function scheduleSync(ms) {
   clearTimeout(S.syncTimer);
@@ -1564,8 +1564,12 @@ function doSync() {
   if (S.syncing) { scheduleSync(1000); return; }
   S.syncing = true;
   var rev = r.rev, id = r.id;
-  call('apiGuardarBorrador', S.token, id, rev, toPayload(r)).then(function (d) {
+  var pl = toPayload(r); pl.dev = DEV_ID;            // v2.6.2: un celular por operación
+  var t0s = Date.now();
+  call('apiGuardarBorrador', S.token, id, rev, pl).then(function (d) {
     S.syncing = false;
+    S.syncLento = (Date.now() - t0s) > 6000;          // servidor ocupado: se guarda con menos frecuencia
+    S.avisoOtro = false;
     if (S.recep && S.recep.id === id) {
       S.recep.srvRev = Math.max(S.recep.srvRev, rev);
       saveLocal();
@@ -1575,6 +1579,11 @@ function doSync() {
   }).catch(function (e) {
     S.syncing = false;
     setSync('err');
+    if (e.code === 'OTRO_CELULAR') {
+      if (!S.avisoOtro) { S.avisoOtro = true; alertMsg('Abierta en otro celular', e.msg + ' Lo escaneado queda guardado en este teléfono.'); }
+      scheduleSync(30000);
+      return;
+    }
     if (e.code === 'ESTADO' || e.code === 'NO_EXISTE') {
       alertMsg('Operación cerrada', e.msg);
       store.del('rm_draft_' + id); store.del('rm_cur'); S.recep = null; go('home');
@@ -2301,7 +2310,8 @@ function sendConfirm() {
   clearTimeout(S.syncTimer);
   busy(true, 'Confirmando ' + palabra(opOf(r)) + '…');
   var opConf = opOf(r);
-  call('apiConfirmarRecepcion', S.token, r.id, toPayload(r)).then(function (d) {
+  var plc = toPayload(r); plc.dev = DEV_ID;
+  call('apiConfirmarRecepcion', S.token, r.id, plc).then(function (d) {
     busy(false);
     var h = d.recepcion;
     store.del('rm_draft_' + r.id); store.del('rm_cur');
