@@ -13,7 +13,7 @@
  *
  * Para publicar un cambio de este archivo, subir el número de CACHE.
  */
-var CACHE = 'recepcion-v2.6.2-logo2';
+var CACHE = 'recepcion-v2.7.0';
 var PANTALLA = './index.html';
 var ESTATICOS = ['./manifest.webmanifest', './html5-qrcode.min.js', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 var LIBRERIAS = ['https://bonetti54.github.io/recepcion/html5-qrcode.min.js'];

@@ -243,6 +243,19 @@ textarea.input{resize:vertical;font-size:16px}
 #scr-recep[data-op^="AJUSTE"] .topbar.dark{background:#7c2d12}
 #scr-recep[data-op="CONSUMO"] .topbar.dark{background:#831843}
 .chips.wrap{flex-wrap:wrap;padding:0;overflow:visible}
+/* v2.7: cajas y corrección de artículos */
+.mini-link{background:none;border:0;color:var(--muted);font-size:13px;text-decoration:underline;padding:6px 0 0;cursor:pointer}
+.btn-cajas{margin-top:4px}
+#scr-cajas .topbar.dark{background:#3f2d1d}
+.cj-card{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:16px;margin-top:10px;line-height:1.45}
+.cj-card .big{font-size:22px;font-weight:800;line-height:1.2}
+.cj-card .sub{color:var(--muted);font-size:15px;margin-top:6px}
+.cj-card.wait{border-color:#d97706;background:#fffbeb}
+.cj-card.ok{border-color:#16a34a;background:#f0fdf4}
+.cj-card.err{border-color:#dc2626;background:#fef2f2}
+.cj-card.nuevo{border-color:#2563eb;background:#eff6ff}
+.cj-log .item{cursor:default}
+.warn-box{background:#fff7ed;border:1.5px solid #fb923c;border-radius:10px;padding:10px;margin:10px 0;font-size:15px}
 .line.changed{border-left-color:#d97706;background:#fff7ed}
 .line .q s,.tbl s{color:#9aa3ad;font-size:15px;margin-right:4px}
 .rect-bar{background:#7c2d12!important}
@@ -320,6 +333,7 @@ textarea.input{resize:vertical;font-size:16px}
         <button class="btn btn-con btn-lg" id="btn-new-con">🧾<br>CONSUMO INTERNO</button>
         <button class="btn btn-inv btn-lg" id="btn-new-inv">📋<br>INVENTARIO</button>
       </div>
+      <button class="btn btn-ghost btn-cajas hidden" id="btn-cajas">📦 Enseñar cajas de proveedores</button>
       <h3 class="section-title">En proceso</h3>
       <div id="home-open" class="list"></div>
       <button class="btn btn-ghost btn-lg" id="btn-history">Historial</button>
@@ -495,6 +509,31 @@ textarea.input{resize:vertical;font-size:16px}
   </section>
 
   <!-- ============ RECTIFICAR (ADMIN) ============ -->
+  <!-- ============ v2.7: APRENDER CAJAS ============ -->
+  <section class="screen" id="scr-cajas">
+    <header class="topbar dark">
+      <button class="tb-back" data-go="home">‹</button>
+      <div class="tb-mid"><div class="tb-sub">Modo aprendizaje</div><div class="tb-title">Enseñar cajas</div></div>
+      <span></span>
+    </header>
+    <main class="pad">
+      <label class="field-label" for="cj-prov">Proveedor que estás recorriendo</label>
+      <input id="cj-prov" class="input" list="cj-prov-list" placeholder="Ej.: HEBILLA" autocomplete="off" maxlength="80">
+      <datalist id="cj-prov-list"></datalist>
+      <div class="scanbar" style="margin-top:12px">
+        <input id="scan-cj" class="scan-input" inputmode="none" autocomplete="off" autocorrect="off" spellcheck="false"
+               placeholder="Escanear código de la caja" enterkeyhint="go">
+        <button class="sq-btn" id="btn-cj-type" title="Escribir código">⌨</button>
+        <button class="sq-btn" id="btn-cj-cam" title="Escanear con cámara">📷</button>
+      </div>
+      <div class="cj-card" id="cj-card"></div>
+      <button class="btn btn-ghost hidden" id="btn-cj-cancel">Cancelar esta caja</button>
+      <div class="hint" id="cj-count"></div>
+      <h3 class="section-title">Últimas de esta sesión</h3>
+      <div id="cj-log" class="list compact cj-log"></div>
+    </main>
+  </section>
+
   <section class="screen" id="scr-rect">
     <header class="topbar dark rect-bar">
       <button class="tb-back" id="btn-rect-back">‹</button>
@@ -541,6 +580,25 @@ textarea.input{resize:vertical;font-size:16px}
     <button class="btn btn-ghost" id="q-cancel">Cancelar</button>
     <button class="btn btn-danger hidden" id="q-delete">Eliminar</button>
     <button class="btn btn-primary btn-grow" id="q-ok">AGREGAR</button>
+  </div>
+</div>
+
+<!-- v2.7: Corregir datos del artículo -->
+<div class="sheet sheet-tall hidden" id="sh-fix">
+  <div class="sheet-grip"></div>
+  <div class="qty-head" id="fix-head"></div>
+  <label class="field-label" for="fix-uxb">Unidades por bulto (lo que trae la caja)</label>
+  <input id="fix-uxb" class="input input-big" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">
+  <label class="field-label" for="fix-pres">Contenido (ej.: 250 GRS, 1 LT)</label>
+  <input id="fix-pres" class="input" maxlength="40" autocomplete="off">
+  <label class="field-label" for="fix-desc">Descripción</label>
+  <input id="fix-desc" class="input" maxlength="120" autocomplete="off">
+  <label class="field-label">Motivo</label>
+  <div class="chips wrap" id="fix-motivos"></div>
+  <p class="hint">Se usa en la app al instante y queda un aviso en la planilla para cambiarlo también en SIGA.</p>
+  <div class="sheet-actions">
+    <button class="btn btn-ghost" id="fix-cancel">Cancelar</button>
+    <button class="btn btn-primary btn-grow" id="fix-ok">GUARDAR CAMBIO</button>
   </div>
 </div>
 
@@ -799,7 +857,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.6.2';
+var FRONT_VERSION = '2.7.0';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -914,7 +972,7 @@ function beep(ok) {
 
 // ------------------------------------------------------------ navegación
 function go(name) {
-  if (name !== 'recep') { S.camMode = false; if (cam) closeCamera(); }
+  if (name !== 'recep' && name !== 'cajas') { S.camMode = false; if (cam) closeCamera(); }
   document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
   $('scr-' + name).classList.add('active');
   S.screen = name;
@@ -924,6 +982,7 @@ function go(name) {
   if (name === 'confirm') renderConfirm();
   if (name === 'history') loadHistory();
   if (name === 'rect') renderRect();
+  if (name === 'cajas') { renderCajas(); refocusScan(); }
 }
 document.addEventListener('click', function (e) {
   var g = e.target.closest('[data-go]');
@@ -1141,13 +1200,42 @@ function buildCatalog(d) {
     if (!arr) map.set(k, [cod]);
     else if (arr.indexOf(cod) < 0) arr.push(cod);
   }
+  var ub = new Map();   // v2.7: primer código de UNIDAD de cada artículo
   d.b.forEach(function (r) {
     if (!prods.has(r[1])) return;
     addTo(bc, r[0], r[1]);
     addTo(nz, r[0].replace(/^0+/, ''), r[1]);
+    if (!ub.has(r[1])) ub.set(r[1], r[0]);
   });
   list.sort(function (a, b) { return a.d.localeCompare(b.d); });
-  S.cat = { version: d.version, prods: prods, bc: bc, nz: nz, list: list };
+  S.cat = { version: d.version, prods: prods, bc: bc, nz: nz, list: list, ub: ub, cj: new Map(), cjArt: new Map() };
+  (d.cj || []).forEach(function (r) { catPonerCaja(r[0], r[1], r[2]); });
+}
+/** v2.7: registra una caja en el catálogo del celular. */
+function catPonerCaja(code, cod, n) {
+  var old = S.cat.cj.get(code);
+  if (old) { var l0 = S.cat.cjArt.get(old.c) || []; S.cat.cjArt.set(old.c, l0.filter(function (x) { return x.bc !== code; })); }
+  if (!S.cat.prods.has(cod)) return;
+  S.cat.cj.set(code, { c: cod, n: n });
+  var l = S.cat.cjArt.get(cod) || [];
+  l.push({ bc: code, n: n });
+  S.cat.cjArt.set(cod, l);
+}
+/** v2.7: busca una caja aprendida (código exacto o sin ceros adelante). */
+function lookupCaja(code) {
+  if (!S.cat || !S.cat.cj) return null;
+  var x = S.cat.cj.get(code);
+  if (!x) { var z = code.replace(/^0+/, ''); S.cat.cj.forEach(function (v, k) { if (!x && k.replace(/^0+/, '') === z) x = v; }); }
+  return x || null;
+}
+/**
+ * v2.7: aplica un cambio al catálogo guardado en el teléfono. Si el teléfono estaba al día,
+ * queda con la versión nueva del servidor (no hace falta volver a bajarlo).
+ */
+function catGuardarCambio(res, fn) {
+  var d = store.get('rm_cat');
+  if (d) { fn(d); if (res.alDia) d.version = res.catalogoVersion; store.set('rm_cat', d); }
+  if (res.alDia) { S.cat.version = res.catalogoVersion; S.cfg.catalogoVersion = res.catalogoVersion; }
 }
 
 /**
@@ -1196,6 +1284,7 @@ function searchCatalog(q) {
 function renderHome() {
   $('home-user').textContent = S.user ? S.user.nombre : '';
   $('home-empresa').textContent = (S.cfg.empresa || '') + (S.user && S.user.rol === 'ADMIN' ? ' · ADMIN' : '');
+  $('btn-cajas').classList.toggle('hidden', !puedeCajas());
   var box = $('home-open');
   box.innerHTML = '';
   if (!S.enProceso.length) box.innerHTML = '<div class="empty-small">No hay operaciones abiertas.</div>';
@@ -1761,8 +1850,8 @@ $('btn-review').onclick = function () {
 // =====================================================================
 function anySheetOpen() { return !!document.querySelector('.sheet:not(.hidden)'); }
 function refocusScan() {
-  if (S.screen !== 'recep' || anySheetOpen() || !$('modal').classList.contains('hidden')) return;
-  var el = $('scan');
+  if ((S.screen !== 'recep' && S.screen !== 'cajas') || anySheetOpen() || !$('modal').classList.contains('hidden')) return;
+  var el = $(S.screen === 'cajas' ? 'scan-cj' : 'scan');
   el.setAttribute('inputmode', 'none');
   var f = function () { try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); } };
   f();
@@ -1797,9 +1886,9 @@ $('scan').addEventListener('input', function () {
 var KB = { buf: '', last: 0, timer: null };
 document.addEventListener('keydown', function (e) {
   var t = e.target;
-  if (t && t.id === 'scan') return;
+  if (t && (t.id === 'scan' || t.id === 'scan-cj')) return;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-  if (S.screen !== 'recep' && S.screen !== 'rect') return;
+  if (S.screen !== 'recep' && S.screen !== 'rect' && S.screen !== 'cajas') return;
   var now = Date.now();
   if (e.key === 'Enter' || e.key === 'Tab') {
     if (KB.buf.length >= 3) {
@@ -1830,9 +1919,19 @@ function onScan(raw, source) {
     if (rc.length < 2) return;
     closeSheets(true);
     var rr = lookup(rc, false);
+    var rcj = !rr.matches.length && lookupCaja(rc);                      // v2.7: una caja busca su artículo
+    if (rcj && S.cat.prods.get(rcj.c)) rr.matches = [S.cat.prods.get(rcj.c)];
     if (rr.matches.length === 1) { beep(true); rectPick(rr.matches[0]); }
     else if (rr.matches.length > 1) { beep(true); openChooser(rc, rr.matches); }
     else { beep(false); toast('El código ' + rc + ' no está en el maestro', 'err'); }
+    return;
+  }
+  if (S.screen === 'cajas') {                    // v2.7: modo aprendizaje
+    if (!$('modal').classList.contains('hidden') || anySheetOpen() && $('sh-cam').classList.contains('hidden')) return;
+    var cc = cleanCode(raw);
+    if (cc.length < 2) return;
+    if (source === 'camara') closeCamera();
+    cajasOnScan(cc);
     return;
   }
   if (S.screen !== 'recep' || !S.recep) return;
@@ -1854,6 +1953,18 @@ function onScan(raw, source) {
   if (source === 'camara') closeCamera();
   else if (source === 'lector' || source === 'campo') { S.camMode = false; if (cam) closeCamera(); }
 
+  // v2.7: CAJA aprendida => suma sola sus unidades al artículo, con el código de la UNIDAD
+  // (queda igual que si se hubieran escaneado de a una).
+  var caja = source !== 'manual' && lookupCaja(code);
+  if (caja && S.cat.prods.get(caja.c)) {
+    var pc = S.cat.prods.get(caja.c);
+    beep(true);
+    var lc = addToRecep(pc.c, S.cat.ub.get(pc.c) || '', 0, caja.n);
+    renderRecep();
+    showLastScan('📦 Caja: ' + pc.d + '  +' + fmtN(caja.n) + ' u  (total ' + fmtN(lineUnits(lc)) + ')', true);
+    refocusScan(); camResume();
+    return;
+  }
   var tl0 = Date.now();
   var res = lookup(code, source === 'manual');
   if (res.matches.length === 1) {
@@ -1935,7 +2046,10 @@ function setupQtySheet(q) {
     head.innerHTML = '<div class="d">PRODUCTO NO IDENTIFICADO</div><div class="m">Código ' + esc(q.bc) + ' · contá las unidades</div>';
   } else {
     head.innerHTML = '<div class="d">' + esc(p.d) + '</div><div class="m">' + esc(p.p) + ' · Cód. SIGA ' + esc(p.c) +
-      (p.x > 1 ? ' · Bulto x' + p.x : '') + (p.a ? '' : ' · <span class="badge badge-inact">DE BAJA EN SIGA</span>') + '</div>';
+      (p.x > 1 ? ' · Bulto x' + p.x : '') + (p.a ? '' : ' · <span class="badge badge-inact">DE BAJA EN SIGA</span>') + '</div>' +
+      (puedeCorregir() && (q.mode === 'add' || q.mode === 'edit') ? '<button type="button" class="mini-link" id="q-fix">✏️ corregir datos del artículo</button>' : '');
+    var qf = $('q-fix');
+    if (qf) { qf.addEventListener('pointerdown', function (e) { e.preventDefault(); }); qf.onclick = function () { openFix(S.qty.p, S.qty); }; }
   }
   // Ya cargado
   var prev = $('q-prev');
@@ -2140,6 +2254,259 @@ $('s-close').onclick = function () { closeSheets(); };
 $('btn-search').onclick = function () { openSearch(''); };
 
 // =====================================================================
+//  v2.7 · ENSEÑAR CAJAS (modo aprendizaje) y CORREGIR DATOS DE ARTÍCULOS
+// =====================================================================
+function esAdmin() { return !!(S.user && S.user.rol === 'ADMIN'); }
+function puedeCajas() { return !!S.cfg.aprenderCajas && (S.cfg.aprenderCajas === 'TODOS' || esAdmin()); }
+function puedeCorregir() { return !!S.cfg.corregirCatalogo && (S.cfg.corregirCatalogo === 'TODOS' || esAdmin()); }
+function cola(code) { return code.length > 6 ? '…' + code.slice(-6) : code; }
+
+S.cj = { paso: 'caja', caja: '', esCaja: false, log: [], cuenta: null };
+$('btn-cajas').onclick = function () { go('cajas'); };
+
+function renderCajas() {
+  var dl = $('cj-prov-list');
+  dl.innerHTML = '';
+  (S.provs || []).filter(function (p) { return !esProvInventario(p); }).slice(0, 400).forEach(function (p) {
+    var o = document.createElement('option'); o.value = p.nombre; dl.appendChild(o);
+  });
+  if (!$('cj-prov').value) $('cj-prov').value = store.get('rm_cj_prov') || '';
+  cajasPintar();
+}
+$('cj-prov').addEventListener('change', function () { store.set('rm_cj_prov', this.value.trim()); S.cj.cuenta = null; cajasPintar(); refocusScan(); });
+$('btn-cj-cam').onclick = openCamera;
+$('btn-cj-type').onclick = function () {
+  modal('Escribir código', '<input id="cj-tipeo" class="input input-big" inputmode="numeric" maxlength="20" autocomplete="off">',
+    [{ label: 'Cancelar', value: false }, { label: 'Aceptar', value: true, cls: 'btn-primary' }]).then(function (ok) {
+    var v = cleanCode(($('cj-tipeo') || {}).value);
+    if (ok && v.length >= 4) cajasOnScan(v);
+  });
+  setTimeout(function () { var el = $('cj-tipeo'); if (el) el.focus(); }, 60);
+};
+$('btn-cj-cancel').onclick = function () { S.cj.paso = 'caja'; S.cj.caja = ''; S.cj.esCaja = false; cajasPintar(); refocusScan(); };
+$('scan-cj').addEventListener('keydown', function (e) {
+  if (KB.buf && Date.now() - KB.last < 150) { this.value = KB.buf + this.value; KB.buf = ''; clearTimeout(KB.timer); }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    var v = this.value; this.value = '';
+    if (v.trim()) onScan(v, 'campo');
+  }
+});
+$('scan-cj').addEventListener('input', function () {
+  var el = this;
+  clearTimeout(scanIdle);
+  scanIdle = setTimeout(function () {
+    var v = el.value.trim();
+    if (v.length >= 8 && /^\d+$/.test(v)) { el.value = ''; onScan(v, 'campo'); }
+  }, 300);
+});
+
+function cajasPintar(tipo, html) {
+  var card = $('cj-card');
+  if (S.cj.paso === 'unidad') {
+    card.className = 'cj-card wait';
+    card.innerHTML = '<div class="big">📦 Caja nueva ' + esc(cola(S.cj.caja)) + '</div>' +
+      '<div class="sub">Abrila y escaneá <b>UNA unidad</b> de adentro.</div>';
+    $('scan-cj').placeholder = 'Escanear UNA unidad de adentro';
+  } else {
+    card.className = 'cj-card' + (tipo ? ' ' + tipo : '');
+    card.innerHTML = html || '<div class="big">Escaneá el código de una caja</div><div class="sub">Si ya la conozco te muestro qué trae; si es nueva te pido una unidad de adentro.</div>';
+    $('scan-cj').placeholder = 'Escanear código de la caja';
+  }
+  $('btn-cj-cancel').classList.toggle('hidden', S.cj.paso !== 'unidad');
+  var prov = $('cj-prov').value.trim();
+  $('cj-count').textContent = prov && S.cj.cuenta !== null ? 'Cajas enseñadas de ' + prov + ': ' + S.cj.cuenta : '';
+  var lg = $('cj-log');
+  lg.innerHTML = S.cj.log.length ? '' : '<div class="empty-small">Todavía nada.</div>';
+  S.cj.log.slice(0, 15).forEach(function (x) {
+    var d = document.createElement('div');
+    d.className = 'item';
+    d.innerHTML = '<div class="grow"><div class="t">' + esc(x.t) + '</div><div class="s">' + esc(x.s) + '</div></div>';
+    lg.appendChild(d);
+  });
+}
+
+function cajasOnScan(code) {
+  if (S.cj.paso === 'unidad') {
+    if (code === S.cj.caja) { beep(false); toast('Ese es el código de la caja. Escaneá una UNIDAD de adentro.', 'err'); return; }
+    if (lookupCaja(code)) { beep(false); toast('Ese código también es una caja. Escaneá una UNIDAD suelta.', 'err'); return; }
+    var r = lookup(code, false);
+    if (r.matches.length === 1) { beep(true); cajasPedirCantidad(r.matches[0], code); }
+    else if (r.matches.length > 1) { beep(true); cajasElegir(r.matches, code); }
+    else { beep(true); cajasProductoNuevo(code); }
+    return;
+  }
+  var k = lookupCaja(code);
+  if (k && S.cat.prods.get(k.c)) {
+    var p = S.cat.prods.get(k.c);
+    beep(true);
+    cajasPintar('ok', '<div class="big">✔ Caja conocida</div><div class="sub"><b>' + esc(p.d) + '</b> · ' + esc(p.p) +
+      '<br>Trae <b>' + fmtN(k.n) + ' u</b> · código ' + esc(cola(code)) + '</div>' +
+      '<button type="button" class="btn btn-ghost" id="cj-edit" style="margin-top:10px">Cambiar cantidad</button>' +
+      (puedeCorregir() ? '<button type="button" class="mini-link" id="cj-fix">✏️ corregir datos del artículo</button>' : ''));
+    $('cj-edit').onclick = function () { S.cj.caja = code; S.cj.esCaja = false; cajasPedirCantidad(p, '', k.n); };
+    if ($('cj-fix')) $('cj-fix').onclick = function () { openFix(p, null); };
+    return;
+  }
+  var u = lookup(code, false);
+  if (u.matches.length) {
+    var pu = u.matches[0];
+    beep(false);
+    modal('Es un código de UNIDAD', '<p>En SIGA este código es de una unidad:<br><b>' + esc(pu.d) + '</b> ' + esc(pu.p) + '</p>' +
+      '<p>Escaneá el código de la <b>caja</b>. Si este código en realidad está en la caja, tocá "Es la caja".</p>',
+      [{ label: 'Ok, era una unidad', value: false }, { label: 'Es la caja', value: true, cls: 'btn-warn' }]).then(function (es) {
+      if (!es) return;
+      S.cj.caja = code; S.cj.esCaja = true;
+      cajasPedirCantidad(pu, '');
+    });
+    return;
+  }
+  beep(true);
+  S.cj.caja = code; S.cj.esCaja = false; S.cj.paso = 'unidad';
+  cajasPintar();
+}
+
+function cajasElegir(matches, code) {
+  var btns = [{ label: 'Cancelar', value: null }];
+  matches.slice(0, 4).forEach(function (p, i) { btns.push({ label: p.d + ' ' + p.p, value: i, cls: 'btn-ghost' }); });
+  modal('¿Cuál es?', '<p>El código ' + esc(code) + ' es de más de un artículo.</p>', btns).then(function (i) {
+    if (i !== null && i !== undefined && matches[i]) cajasPedirCantidad(matches[i], code);
+  });
+}
+
+/** Pide cuántas unidades trae la caja y la guarda. nActual = la caja ya estaba aprendida. */
+function cajasPedirCantidad(p, unidadBc, nActual) {
+  var caja = S.cj.caja;
+  var otras = (S.cat.cjArt.get(p.c) || []).filter(function (x) { return x.bc !== caja; });
+  var aviso = otras.length ? '<div class="warn-box">⚠ Este artículo ya tenía ' + (otras.length > 1 ? 'otras cajas: ' : 'la caja ') +
+    otras.map(function (x) { return esc(cola(x.bc)) + ' de <b>' + fmtN(x.n) + ' u</b>'; }).join(', ') +
+    '.<br>¿Cambió la cantidad que trae? Poné lo que trae <b>esta</b> caja.</div>' : '';
+  var def = nActual || (otras.length ? otras[0].n : (p.x > 1 ? p.x : ''));
+  modal('¿Cuántas unidades trae la caja?', '<p><b>' + esc(p.d) + '</b> ' + esc(p.p) + '<br><span class="muted">Caja ' + esc(cola(caja)) +
+    (p.x > 1 ? ' · el catálogo dice bulto x' + p.x : '') + '</span></p>' + aviso +
+    '<input id="cj-n" class="input input-big" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" value="' + esc(def) + '">',
+    [{ label: 'Cancelar', value: false }, { label: 'GUARDAR CAJA', value: true, cls: 'btn-primary' }]).then(function (ok) {
+    var n = parseInt(($('cj-n') || {}).value, 10) || 0;
+    if (!ok) { if (!nActual) { S.cj.paso = 'caja'; S.cj.caja = ''; cajasPintar(); } return; }
+    if (n < 2 || n > 9999) { toast('Poné cuántas unidades trae (2 o más)', 'err'); return cajasPedirCantidad(p, unidadBc, nActual); }
+    var pasoUxb = (p.x !== n && puedeCorregir())
+      ? modal('¿Cambiar el bulto en el catálogo?', '<p>El catálogo dice <b>' + fmtN(p.x) + '</b> por bulto y esta caja trae <b>' + fmtN(n) + '</b>.</p>' +
+          '<p>¿Cambiar las unidades por bulto a <b>' + fmtN(n) + '</b>? Queda un aviso en la planilla para cambiarlo también en SIGA.</p>',
+          [{ label: 'No, dejar ' + p.x, value: false }, { label: 'Sí, cambiar a ' + n, value: true, cls: 'btn-primary' }])
+      : Promise.resolve(false);
+    pasoUxb.then(function (cambiarUxb) { cajasGuardar({ p: p, unidadBc: unidadBc, n: n, cambiarUxb: cambiarUxb }); });
+  });
+  setTimeout(function () { var el = $('cj-n'); if (el) { el.focus(); el.select(); } }, 60);
+}
+
+function cajasProductoNuevo(unidadBc) {
+  modal('🆕 Producto nuevo', '<p>La unidad <b>' + esc(unidadBc) + '</b> no está en el maestro de SIGA. Se guarda la caja y queda para dar de alta en SIGA.</p>' +
+    '<label class="field-label">¿Qué producto es?</label><input id="cj-desc" class="input" maxlength="120" autocomplete="off" placeholder="Marca, producto y contenido">' +
+    '<label class="field-label">¿Cuántas unidades trae la caja?</label><input id="cj-n2" class="input input-big" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">',
+    [{ label: 'Cancelar', value: false }, { label: 'GUARDAR', value: true, cls: 'btn-primary' }]).then(function (ok) {
+    var desc = (($('cj-desc') || {}).value || '').trim(), n = parseInt(($('cj-n2') || {}).value, 10) || 0;
+    if (!ok) { S.cj.paso = 'caja'; S.cj.caja = ''; cajasPintar(); return; }
+    if (desc.length < 3 || n < 2) { toast('Completá qué producto es y cuántas trae', 'err'); return cajasProductoNuevo(unidadBc); }
+    cajasGuardar({ p: null, unidadBc: unidadBc, n: n, desc: desc });
+  });
+  setTimeout(function () { var el = $('cj-desc'); if (el) el.focus(); }, 60);
+}
+
+function cajasGuardar(o) {
+  var caja = S.cj.caja, prov = $('cj-prov').value.trim();
+  busy(true, 'Guardando la caja…');
+  call('apiAprenderCaja', S.token, { caja: caja, codigo: o.p ? o.p.c : '', unidades: o.n, proveedor: prov, unidadBarras: o.unidadBc || '',
+    descNueva: o.desc || '', esCaja: S.cj.esCaja, ver: S.cat.version }).then(function (res) {
+    busy(false);
+    if (res.codigo) {
+      catPonerCaja(caja, res.codigo, res.unidades);
+      catGuardarCambio(res, function (d) {
+        d.cj = (d.cj || []).filter(function (r) { return r[0] !== caja; });
+        d.cj.push([caja, res.codigo, res.unidades]);
+      });
+    }
+    S.cj.cuenta = prov ? res.cuentaProveedor : null;
+    S.cj.paso = 'caja'; S.cj.caja = ''; S.cj.esCaja = false;
+    var t = o.p ? o.p.d + ' ' + o.p.p : o.desc.toUpperCase();
+    S.cj.log.unshift({ t: (o.p ? '📦 ' : '🆕 ') + t, s: 'Caja ' + cola(caja) + ' = ' + fmtN(o.n) + ' u' + (res.modificada ? ' (corregida)' : '') + (o.p ? '' : ' · falta alta en SIGA') });
+    cajasPintar(o.p ? 'ok' : 'nuevo', '<div class="big">' + (o.p ? '✔ Caja guardada' : '🆕 Caja guardada (producto nuevo)') + '</div><div class="sub"><b>' + esc(t) +
+      '</b><br>Trae ' + fmtN(o.n) + ' u' + (o.p ? '. Desde ahora, al escanearla en una recepción suma ' + fmtN(o.n) + ' solas.' : '. Queda en ALTAS_SUGERIDAS para darlo de alta en SIGA.') + '</div>');
+    beep(true);
+    if (o.cambiarUxb && o.p) return guardarCorreccion(o.p, { uxb: o.n, motivo: 'Caja aprendida: trae ' + o.n }).then(function (ok) {
+      if (ok) $('cj-card').insertAdjacentHTML('beforeend', '<div class="sub">✔ Bulto del catálogo cambiado a x' + o.n + ' (aviso para SIGA).</div>');
+    });
+  }).catch(function (e) {
+    busy(false);
+    beep(false);
+    if (e.code === 'ES_UNIDAD') { S.cj.paso = 'caja'; cajasPintar('err', '<div class="big">Ese código es de una unidad</div><div class="sub">Volvé a escanearlo y tocá "Es la caja" si corresponde.</div>'); return; }
+    alertMsg('No se pudo guardar', e.msg);
+  }).then(function () { refocusScan(); camResume(); });
+}
+
+// ---------- Corregir datos del artículo
+var FIX_MOTIVOS = ['Cambió cómo viene', 'Mal cargado en SIGA', 'Otro'];
+S.fix = null;
+function openFix(p, volver) {
+  if (!p) return;
+  S.fix = { p: p, volver: volver ? { mode: volver.mode, p: volver.p, bc: volver.bc, key: volver.key, val: volver.val, fromUnknown: volver.fromUnknown, lote: volver.lote, venc: volver.venc } : null, motivo: FIX_MOTIVOS[0] };
+  document.querySelectorAll('.sheet').forEach(function (s) { s.classList.add('hidden'); });
+  S.qty = null;
+  $('fix-head').innerHTML = '<div class="d">' + esc(p.d) + '</div><div class="m">Cód. SIGA ' + esc(p.c) + ' · ahora: ' + esc(p.p || 's/contenido') + ' · bulto x' + p.x + '</div>';
+  $('fix-uxb').value = p.x; $('fix-pres').value = p.p || ''; $('fix-desc').value = p.d;
+  pintarFixMotivos();
+  openSheet('sh-fix');
+}
+function pintarFixMotivos() {
+  var box = $('fix-motivos'); box.innerHTML = '';
+  FIX_MOTIVOS.forEach(function (m) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = m;
+    b.className = S.fix && S.fix.motivo === m ? 'on' : '';
+    b.onclick = function () { S.fix.motivo = m; pintarFixMotivos(); };
+    box.appendChild(b);
+  });
+}
+function cerrarFix() {
+  var v = S.fix && S.fix.volver;
+  closeSheets(true);
+  S.fix = null;
+  if (v && S.screen === 'recep' && S.recep) {
+    v.p = S.cat.prods.get(v.p.c) || v.p;
+    setupQtySheet(v);
+    if (v.mode === 'edit') { $('q-prev').textContent = 'Cantidad TOTAL de este artículo (reemplaza la cargada)'; $('q-prev').classList.remove('hidden'); }
+  } else { refocusScan(); camResume(); }
+}
+$('fix-cancel').onclick = cerrarFix;
+$('fix-ok').onclick = function () {
+  var p = S.fix.p, datos = {};
+  var n = parseInt($('fix-uxb').value, 10);
+  if (!(n >= 1 && n <= 9999)) { toast('Unidades por bulto: un número de 1 a 9999', 'err'); return; }
+  if (n !== p.x) datos.uxb = n;
+  var pres = $('fix-pres').value.trim().toUpperCase(), desc = $('fix-desc').value.trim().toUpperCase();
+  if (pres && norm(pres) !== norm(p.p)) datos.pres = pres;
+  if (desc && norm(desc) !== norm(p.d)) { if (desc.length < 3) { toast('La descripción es muy corta', 'err'); return; } datos.desc = desc; }
+  if (!Object.keys(datos).length) { toast('No cambiaste nada', 'warn'); return; }
+  datos.motivo = S.fix.motivo;
+  guardarCorreccion(p, datos).then(function (ok) { if (ok) cerrarFix(); });
+};
+/** Manda la corrección y actualiza el catálogo del celular. Devuelve true si se guardó. */
+function guardarCorreccion(p, datos) {
+  datos.codigo = p.c; datos.ver = S.cat.version; datos.idOp = S.recep && S.screen === 'recep' ? S.recep.id : '';
+  busy(true, 'Guardando el cambio…');
+  return call('apiCorregirArticulo', S.token, datos).then(function (res) {
+    busy(false);
+    if (res.sinCambios) { toast('Ya tenía esos datos', 'warn'); return true; }
+    var o = S.cat.prods.get(p.c);
+    if (o) { o.x = res.uxb; o.p = res.pres; o.d = res.desc; o.n = norm(res.desc); }
+    catGuardarCambio(res, function (d) {
+      for (var i = 0; i < d.p.length; i++) if (d.p[i][0] === p.c) { d.p[i][1] = res.desc; d.p[i][2] = res.pres; d.p[i][3] = res.uxb; break; }
+    });
+    if (S.screen === 'recep' && S.recep) renderRecep();
+    toast('✔ Cambiado. Queda el aviso para pasarlo a SIGA', 'ok');
+    return true;
+  }).catch(function (e) { busy(false); alertMsg('No se pudo guardar', e.msg); return false; });
+}
+
+// =====================================================================
 //  CÁMARA
 //  - App en GitHub Pages: cámara EN VIVO. Detecta el código sola, sin sacar
 //    foto, y después de AGREGAR la cámara se vuelve a abrir sola ("modo cámara").
@@ -2217,8 +2584,8 @@ function closeCamera() {
 }
 /** Tras terminar con un producto, si se venía usando la cámara, se reabre sola. */
 function camResume() {
-  if (!S.camMode || S.screen !== 'recep' || anySheetOpen() || !$('modal').classList.contains('hidden')) return;
-  setTimeout(function () { if (S.camMode && S.screen === 'recep' && !anySheetOpen()) openCamera(); }, 250);
+  if (!S.camMode || (S.screen !== 'recep' && S.screen !== 'cajas') || anySheetOpen() || !$('modal').classList.contains('hidden')) return;
+  setTimeout(function () { if (S.camMode && (S.screen === 'recep' || S.screen === 'cajas') && !anySheetOpen() && $('modal').classList.contains('hidden')) openCamera(); }, 250);
 }
 $('cam-close').onclick = function () { S.camMode = false; closeCamera(); closeSheets(); };
 
