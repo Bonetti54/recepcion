@@ -333,7 +333,7 @@ textarea.input{resize:vertical;font-size:16px}
         <button class="btn btn-con btn-lg" id="btn-new-con">🧾<br>CONSUMO INTERNO</button>
         <button class="btn btn-inv btn-lg" id="btn-new-inv">📋<br>INVENTARIO</button>
       </div>
-      <button class="btn btn-ghost btn-cajas hidden" id="btn-cajas">📦 Enseñar cajas de proveedores</button>
+      <button class="btn btn-ghost btn-cajas hidden" id="btn-cajas">📦 Enseñar cajas</button>
       <h3 class="section-title">En proceso</h3>
       <div id="home-open" class="list"></div>
       <button class="btn btn-ghost btn-lg" id="btn-history">Historial</button>
@@ -517,10 +517,7 @@ textarea.input{resize:vertical;font-size:16px}
       <span></span>
     </header>
     <main class="pad">
-      <label class="field-label" for="cj-prov">Proveedor que estás recorriendo</label>
-      <input id="cj-prov" class="input" list="cj-prov-list" placeholder="Ej.: HEBILLA" autocomplete="off" maxlength="80">
-      <datalist id="cj-prov-list"></datalist>
-      <div class="scanbar" style="margin-top:12px">
+      <div class="scanbar">
         <input id="scan-cj" class="scan-input" inputmode="none" autocomplete="off" autocorrect="off" spellcheck="false"
                placeholder="Escanear código de la caja" enterkeyhint="go">
         <button class="sq-btn" id="btn-cj-type" title="Escribir código">⌨</button>
@@ -529,7 +526,8 @@ textarea.input{resize:vertical;font-size:16px}
       <div class="cj-card" id="cj-card"></div>
       <button class="btn btn-ghost hidden" id="btn-cj-cancel">Cancelar esta caja</button>
       <div class="hint" id="cj-count"></div>
-      <h3 class="section-title">Últimas de esta sesión</h3>
+      <h3 class="section-title" id="cj-tit">Cajas aprendidas</h3>
+      <p class="hint">Quedan guardadas para siempre, en todos los celulares. Al escanear una de estas cajas en una recepción, suma sola sus unidades.</p>
       <div id="cj-log" class="list compact cj-log"></div>
     </main>
   </section>
@@ -857,7 +855,7 @@ function callGas(fn, args, timeoutMs, meta) {
 // =====================================================================
 //  VERSIÓN, MEDICIÓN DE TIEMPOS (etapa 1) Y PWA (etapa 2)
 // =====================================================================
-var FRONT_VERSION = '2.7.0';
+var FRONT_VERSION = '2.7.1';
 var API_REQUERIDA = 5;          // versión del servidor que necesita esta pantalla
 
 /** Compara la versión del servidor con la que espera la pantalla y avisa si hay que actualizar algo. */
@@ -2264,16 +2262,7 @@ function cola(code) { return code.length > 6 ? '…' + code.slice(-6) : code; }
 S.cj = { paso: 'caja', caja: '', esCaja: false, log: [], cuenta: null };
 $('btn-cajas').onclick = function () { go('cajas'); };
 
-function renderCajas() {
-  var dl = $('cj-prov-list');
-  dl.innerHTML = '';
-  (S.provs || []).filter(function (p) { return !esProvInventario(p); }).slice(0, 400).forEach(function (p) {
-    var o = document.createElement('option'); o.value = p.nombre; dl.appendChild(o);
-  });
-  if (!$('cj-prov').value) $('cj-prov').value = store.get('rm_cj_prov') || '';
-  cajasPintar();
-}
-$('cj-prov').addEventListener('change', function () { store.set('rm_cj_prov', this.value.trim()); S.cj.cuenta = null; cajasPintar(); refocusScan(); });
+function renderCajas() { cajasPintar(); }
 $('btn-cj-cam').onclick = openCamera;
 $('btn-cj-type').onclick = function () {
   modal('Escribir código', '<input id="cj-tipeo" class="input input-big" inputmode="numeric" maxlength="20" autocomplete="off">',
@@ -2314,11 +2303,20 @@ function cajasPintar(tipo, html) {
     $('scan-cj').placeholder = 'Escanear código de la caja';
   }
   $('btn-cj-cancel').classList.toggle('hidden', S.cj.paso !== 'unidad');
-  var prov = $('cj-prov').value.trim();
-  $('cj-count').textContent = prov && S.cj.cuenta !== null ? 'Cajas enseñadas de ' + prov + ': ' + S.cj.cuenta : '';
+  // v2.7.1: la lista sale del catálogo (cajas guardadas en la planilla), no de la sesión: no se pierde al salir.
+  var todas = [];
+  if (S.cat && S.cat.cj) S.cat.cj.forEach(function (v, k) {
+    var p = S.cat.prods.get(v.c);
+    todas.push({ t: '📦 ' + (p ? p.d + ' ' + (p.p || '') : v.c), s: 'Caja ' + cola(k) + ' = ' + fmtN(v.n) + ' u' });
+  });
+  todas.reverse();   // la última enseñada, primero
+  var nuevas = S.cj.log.filter(function (x) { return x.nuevo; });   // productos nuevos: no están en el catálogo hasta el alta en SIGA
+  $('cj-tit').textContent = 'Cajas aprendidas (' + fmtN(todas.length + nuevas.length) + ')';
+  $('cj-count').textContent = S.cj.paso === 'unidad' ? 'Esta caja se guarda cuando tocás GUARDAR CAJA. Si salís antes, no queda guardada.' : '';
+  var lista = nuevas.concat(todas);
   var lg = $('cj-log');
-  lg.innerHTML = S.cj.log.length ? '' : '<div class="empty-small">Todavía nada.</div>';
-  S.cj.log.slice(0, 15).forEach(function (x) {
+  lg.innerHTML = lista.length ? '' : '<div class="empty-small">Todavía no hay cajas aprendidas.</div>';
+  lista.slice(0, 60).forEach(function (x) {
     var d = document.createElement('div');
     d.className = 'item';
     d.innerHTML = '<div class="grow"><div class="t">' + esc(x.t) + '</div><div class="s">' + esc(x.s) + '</div></div>';
@@ -2413,7 +2411,7 @@ function cajasProductoNuevo(unidadBc) {
 }
 
 function cajasGuardar(o) {
-  var caja = S.cj.caja, prov = $('cj-prov').value.trim();
+  var caja = S.cj.caja, prov = '';   // v2.7.1: ya no se pide el proveedor
   busy(true, 'Guardando la caja…');
   call('apiAprenderCaja', S.token, { caja: caja, codigo: o.p ? o.p.c : '', unidades: o.n, proveedor: prov, unidadBarras: o.unidadBc || '',
     descNueva: o.desc || '', esCaja: S.cj.esCaja, ver: S.cat.version }).then(function (res) {
@@ -2425,10 +2423,9 @@ function cajasGuardar(o) {
         d.cj.push([caja, res.codigo, res.unidades]);
       });
     }
-    S.cj.cuenta = prov ? res.cuentaProveedor : null;
     S.cj.paso = 'caja'; S.cj.caja = ''; S.cj.esCaja = false;
     var t = o.p ? o.p.d + ' ' + o.p.p : o.desc.toUpperCase();
-    S.cj.log.unshift({ t: (o.p ? '📦 ' : '🆕 ') + t, s: 'Caja ' + cola(caja) + ' = ' + fmtN(o.n) + ' u' + (res.modificada ? ' (corregida)' : '') + (o.p ? '' : ' · falta alta en SIGA') });
+    if (!o.p) S.cj.log.unshift({ nuevo: true, t: '🆕 ' + t, s: 'Caja ' + cola(caja) + ' = ' + fmtN(o.n) + ' u · falta alta en SIGA' });
     cajasPintar(o.p ? 'ok' : 'nuevo', '<div class="big">' + (o.p ? '✔ Caja guardada' : '🆕 Caja guardada (producto nuevo)') + '</div><div class="sub"><b>' + esc(t) +
       '</b><br>Trae ' + fmtN(o.n) + ' u' + (o.p ? '. Desde ahora, al escanearla en una recepción suma ' + fmtN(o.n) + ' solas.' : '. Queda en ALTAS_SUGERIDAS para darlo de alta en SIGA.') + '</div>');
     beep(true);
